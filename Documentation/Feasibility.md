@@ -1,6 +1,6 @@
 # Feasibility gates
 
-Current: repository foundation and ImageIO probe. No production conversion API or CLI exists yet. A probe passing on one Mac does not establish the minimum supported OS.
+Current: working shared engine and CLI for initial image/media, PDF/OCR and table routes, with fixture tests and a source-built media pack. A production release does not exist yet. A probe passing on one Mac does not establish the minimum supported OS.
 
 1. Inventory runtime reader/writer support separately. **Initial ImageIO inventory and synthetic PNG-to-TIFF pixel round trip implemented.** Still needed: HEIC/AVIF, transparency, orientation, color/HDR and malformed input fixtures.
 2. Build a distributable FFmpeg/ffprobe candidate with recorded flags, licenses and sources. Verify MKV/WebM-to-MP4, remux vs encoding, full-duration audio and size constraints. No media pack is selected yet.

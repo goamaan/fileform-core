@@ -1,10 +1,11 @@
 # Dependency and distribution policy
 
-Reviewed against upstream sources September 8, 2026. These are engineering packaging decisions, not clearance of an unbuilt distribution. No third-party engine is bundled today; the current probe uses Apple system frameworks.
+Reviewed against upstream sources September 8, 2026. These are engineering packaging decisions, not clearance of an unbuilt distribution. The development media pack builds FFmpeg 9.0.1 from signature-verified source. Swift Argument Parser 1.8.2 is pinned for the CLI. Final customer distribution still requires signing and the recorded release gates.
 
 | Candidate | Upstream terms / concern | Initial decision |
 |---|---|---|
-| Original Amend core/CLI | Apache-2.0 | Publish source, license and attribution; retain these in app distributions |
+| Original Fileform core/CLI | Apache-2.0 | Publish source, license and attribution; retain these in app distributions |
+| Swift Argument Parser 1.8.2 | Apache-2.0 | Exact SwiftPM dependency and Package.resolved; include its license in CLI archives |
 | Apple ImageIO/CoreGraphics, AVFoundation, PDFKit, Vision | Platform SDK/framework terms | Use system APIs; test runtime and deployment-target availability |
 | FFmpeg + ffprobe | LGPL baseline; enabled GPL components change the build license; nonfree configurations may not be redistributable | Start with a reproducible LGPL build, without GPL/nonfree options; inspect all enabled libraries. Prefer a separately packaged tool adapter. Broad-media release remains gated on that build |
 | libvips | LGPL-2.1 license; codec dependencies have additional terms | Review exact dependency graph and linking/replacement obligations; no arbitrary prebuilt bundle |

@@ -1,4 +1,4 @@
-// Copyright 2026 Amaan Gokak and Amend Core contributors
+// Copyright 2026 Amaan Gokak and Fileform Core contributors
 // SPDX-License-Identifier: Apache-2.0
 // Feasibility probe only; not the production conversion pipeline.
 
@@ -47,7 +47,7 @@ func pixels(_ image: CGImage) throws -> Data {
 
 func run() throws {
     let directory = FileManager.default.temporaryDirectory
-        .appendingPathComponent("amend-imageio-probe-\(UUID().uuidString)", isDirectory: true)
+        .appendingPathComponent("fileform-imageio-probe-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
     defer { try? FileManager.default.removeItem(at: directory) }
 

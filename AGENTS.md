@@ -6,4 +6,4 @@ Keep conversion, planning, queue/cancellation, verification, preview generation,
 
 Only claim routes verified with the actual engine build. Preserve originals and finalize only verified outputs without clobbering existing files. Treat files as untrusted. Record dependency versions, build flags, licenses and distribution requirements before adding binaries.
 
-Read Documentation/Architecture.md and Documentation/Dependencies.md before changing module or distribution boundaries. Scale verification to the change; the current probe runs with `swift Tools/probe-imageio.swift`.
+Read Documentation/Architecture.md and Documentation/Dependencies.md before changing module or distribution boundaries. Scale verification to the change; run `swift test` and `Tools/smoke-cli.sh`; media verification requires `Tools/build-media-pack.sh`.
