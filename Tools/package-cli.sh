@@ -38,5 +38,8 @@ d={'schemaVersion':1,'product':'Fileform CLI','version':os.environ['FILEFORM_PAC
 PY
 FILEFORM_ARCHIVE="$FILEFORM_ROOT/Artifacts/releases/fileform-cli-$FILEFORM_VERSION-$(uname -m).tar.gz"
 tar -czf "$FILEFORM_ARCHIVE" -C "$FILEFORM_STAGE" .
-shasum -a 256 "$FILEFORM_ARCHIVE" > "$FILEFORM_ARCHIVE.sha256"
+(
+    cd "$(dirname "$FILEFORM_ARCHIVE")"
+    shasum -a 256 "$(basename "$FILEFORM_ARCHIVE")" > "$(basename "$FILEFORM_ARCHIVE").sha256"
+)
 echo "Development CLI archive: $FILEFORM_ARCHIVE"
