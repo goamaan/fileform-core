@@ -3,6 +3,7 @@
 import Foundation
 import CoreGraphics
 import ImageIO
+import CoreText
 
 guard CommandLine.arguments.count == 2 else { fatalError("Usage: swift Tools/generate-fixtures.swift <empty-output-directory>") }
 let directory = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
@@ -44,4 +45,34 @@ for index in 0..<samples {
     integer(value); integer(value)
 }
 try wave.write(to: directory.appendingPathComponent("Studio tone.wav"), options: .withoutOverwriting)
+
+func drawText(_ text: String, in context: CGContext, y: CGFloat, size: CGFloat = 28) {
+    let string = NSAttributedString(string: text, attributes: [
+        NSAttributedString.Key(kCTFontAttributeName as String): CTFontCreateWithName("Helvetica" as CFString, size, nil),
+        NSAttributedString.Key(kCTForegroundColorAttributeName as String): CGColor(gray: 0.1, alpha: 1)
+    ])
+    context.textPosition = CGPoint(x: 54, y: y)
+    CTLineDraw(CTLineCreateWithAttributedString(string), context)
+}
+let receipt = CGContext(data: nil, width: 1000, height: 600, bitsPerComponent: 8, bytesPerRow: 4000,
+                        space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+receipt.setFillColor(CGColor(gray: 1, alpha: 1)); receipt.fill(CGRect(x: 0, y: 0, width: 1000, height: 600))
+drawText("Fileform studio receipt", in: receipt, y: 470, size: 48)
+drawText("Notebook and art supplies", in: receipt, y: 350, size: 36)
+drawText("Total: 42.50", in: receipt, y: 220, size: 48)
+let receiptWriter = CGImageDestinationCreateWithURL(directory.appendingPathComponent("Receipt scan.png") as CFURL, "public.png" as CFString, 1, nil)!
+CGImageDestinationAddImage(receiptWriter, receipt.makeImage()!, nil)
+guard CGImageDestinationFinalize(receiptWriter) else { fatalError("Could not encode receipt fixture") }
+var pageBox = CGRect(x: 0, y: 0, width: 612, height: 792)
+let pdfConsumer = CGDataConsumer(url: directory.appendingPathComponent("Project notes.pdf") as CFURL)!
+let pdf = CGContext(consumer: pdfConsumer, mediaBox: &pageBox, nil)!
+for (heading, body) in [("Project notes", "Bring the files. Choose a useful output."), ("Packing list", "Camera, audio recorder, notebook.")] {
+    pdf.beginPDFPage(nil)
+    drawText(heading, in: pdf, y: 700, size: 36)
+    drawText(body, in: pdf, y: 630, size: 22)
+    pdf.endPDFPage()
+}
+pdf.closePDF()
+try Data("Item,Count,Notes\r\nCamera,1,Ready\r\nAudio recorder,2,Charged\r\nNotebook,1,Blank pages\r\n".utf8)
+    .write(to: directory.appendingPathComponent("Project table.csv"), options: .withoutOverwriting)
 print("Generated synthetic fixtures at \(directory.path)")

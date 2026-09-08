@@ -11,3 +11,5 @@ September 8, 2026, local arm64/macOS 26.2, Xcode 26.2 / Swift 6.2.3.
 - The native app was exercised with the same image and a bundled-media conversion. Its JPEG bytes matched the CLI output exactly on this machine; the video result retained H.264/AAC streams, dimensions and full duration. App evidence lives with the separate GUI project.
 
 Run `swift test` and `Tools/smoke-cli.sh` for the current suite. Media tests require `Tools/build-media-pack.sh` first. CI runs the same source build and tests. A green local test is not proof of clean-machine install, notarization, minimum-OS support or complete malformed-input resilience.
+
+The first GitHub run exposed a GnuPG socket-path limit in a long checkout path. A local short-path/long-path reproduction returned 0 versus 2 (file name too long). The builder now uses an isolated short temporary keyring, retains source-verification logs, and cleans up its own keyring.

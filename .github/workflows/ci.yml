@@ -32,8 +32,14 @@ jobs:
         run: swift test
       - name: Verify CLI end to end
         run: Tools/smoke-cli.sh
-      - name: Build release CLI
-        run: swift build -c release
+      - name: Build development CLI delivery archive
+        run: Tools/package-cli.sh --with-media
+      - name: Retain development CLI archive
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fileform-cli-development
+          path: Artifacts/releases/
+          retention-days: 14
       - name: Retain build evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -46,4 +52,7 @@ jobs:
             Artifacts/MediaPack/protocols.txt
             Artifacts/engine-build/configure.log
             Artifacts/engine-build/make.log
+            Artifacts/engine-build/key-import.log
+            Artifacts/engine-build/verification.log
+            Artifacts/engine-build/verification.txt
           retention-days: 14

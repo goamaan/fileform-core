@@ -20,11 +20,11 @@ done
 printf '%s  %s\n' "$FILEFORM_SHA256" "ffmpeg-$FILEFORM_VERSION.tar.xz" | shasum -a 256 -c -
 command -v gpg >/dev/null || { echo 'Install GnuPG to verify the upstream source release.' >&2; exit 1; }
 curl --fail --silent --show-error https://ffmpeg.org/ffmpeg-devel.asc -o ffmpeg-devel.asc
-mkdir -p verification-keyring
-chmod 700 verification-keyring
-gpg --homedir "$FILEFORM_WORK/verification-keyring" --batch --import ffmpeg-devel.asc >/dev/null 2>&1
-gpg --homedir "$FILEFORM_WORK/verification-keyring" --batch --status-fd 1 \
-    --verify "ffmpeg-$FILEFORM_VERSION.tar.xz.asc" "ffmpeg-$FILEFORM_VERSION.tar.xz" > verification.txt 2> verification.log
+FILEFORM_GPG_HOME="$(mktemp -d /tmp/fileform-gpg.XXXXXX)"
+trap 'gpgconf --homedir "$FILEFORM_GPG_HOME" --kill all >/dev/null 2>&1 || true; rm -rf "$FILEFORM_GPG_HOME"' EXIT
+gpg --homedir "$FILEFORM_GPG_HOME" --batch --import ffmpeg-devel.asc > key-import.log 2>&1 || { cat key-import.log >&2; exit 1; }
+gpg --homedir "$FILEFORM_GPG_HOME" --batch --status-fd 1 \
+    --verify "ffmpeg-$FILEFORM_VERSION.tar.xz.asc" "ffmpeg-$FILEFORM_VERSION.tar.xz" > verification.txt 2> verification.log || { cat verification.log >&2; exit 1; }
 grep -q "VALIDSIG $FILEFORM_KEY " verification.txt || { echo 'Unexpected FFmpeg release signer.' >&2; exit 1; }
 
 if [ ! -d "ffmpeg-$FILEFORM_VERSION" ]; then tar -xf "ffmpeg-$FILEFORM_VERSION.tar.xz"; fi
@@ -36,9 +36,9 @@ FILEFORM_FLAGS=(
     --enable-videotoolbox --enable-audiotoolbox --enable-zlib
     --extra-cflags=-mmacosx-version-min=14.0 --extra-ldflags=-mmacosx-version-min=14.0
 )
-./configure "${FILEFORM_FLAGS[@]}" > "$FILEFORM_WORK/configure.log" 2>&1
+./configure "${FILEFORM_FLAGS[@]}" > "$FILEFORM_WORK/configure.log" 2>&1 || { tail -n 60 "$FILEFORM_WORK/configure.log" >&2; exit 1; }
 FILEFORM_JOBS="${FILEFORM_BUILD_JOBS:-6}"
-make -j "$FILEFORM_JOBS" > "$FILEFORM_WORK/make.log" 2>&1
+make -j "$FILEFORM_JOBS" > "$FILEFORM_WORK/make.log" 2>&1 || { tail -n 60 "$FILEFORM_WORK/make.log" >&2; exit 1; }
 cp ffmpeg ffprobe "$FILEFORM_PACK/bin/"
 cp COPYING.LGPLv2.1 LICENSE.md "$FILEFORM_PACK/licenses/"
 cp "$FILEFORM_WORK/ffmpeg-$FILEFORM_VERSION.tar.xz" "$FILEFORM_WORK/ffmpeg-$FILEFORM_VERSION.tar.xz.asc" "$FILEFORM_PACK/sources/"
