@@ -6,7 +6,7 @@ cd "$FILEFORM_ROOT"
 swift build >/dev/null
 FILEFORM_WORK="$(mktemp -d "${TMPDIR:-/tmp}/fileform-cli-smoke.XXXXXX")"
 trap 'rm -rf "$FILEFORM_WORK"' EXIT
-swift Tools/generate-fixtures.swift "$FILEFORM_WORK/inputs" >/dev/null
+Tools/generate-fixtures.sh "$FILEFORM_WORK/inputs" >/dev/null
 mkdir "$FILEFORM_WORK/outputs"
 .build/debug/fileform --help > "$FILEFORM_WORK/help.txt"
 .build/debug/fileform inspect "$FILEFORM_WORK/inputs/Studio chart.png" --json > "$FILEFORM_WORK/inspection.json"
