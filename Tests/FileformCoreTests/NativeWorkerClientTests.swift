@@ -152,9 +152,14 @@ private func processIsLive(_ pid: pid_t) throws -> Bool {
 @Test func nativeWorkerClientRejectsOversizedProtocolAndStopsWriters() async throws {
     let fixture = try Fixture(); defer { fixture.cleanup() }
     let input = try fixture.image()
-    // 4 MiB exceeds the client's maximum two 1 MiB response frames.
+    // Advertise a 2 MiB frame before flooding. The header alone exceeds the
+    // per-frame ceiling; rejection must not depend on pipe throughput.
     let hostile = try HostileWorkerFixture(in: fixture, behavior: """
-    /bin/dd if=/dev/zero bs=65536 count=64 &
+    (
+        while [ ! -s "$(dirname "$0")/flood.pid" ]; do /bin/sleep 0.01; done
+        printf '\\000\\040\\000\\000'
+        /bin/dd if=/dev/zero bs=65536 count=64
+    ) &
     printf '%s\\n' "$!" > "$(dirname "$0")/flood.pid"
     wait
     """)

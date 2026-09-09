@@ -83,15 +83,9 @@ public struct NativeWorkerClient: Sendable {
         var message = try WorkerFrameCodec.encode(handshake)
         message.append(try WorkerFrameCodec.encode(request))
         let pipe = try WorkerProcess(executable: executable, source: source, output: output, scratch: scratch, message: message)
-        let data = try await withTaskCancellationHandler {
+        let responses = try await withTaskCancellationHandler {
             try await pipe.collect(timeout: timeout)
         } onCancel: { pipe.stop() }
-        let responses: [WorkerResponse]
-        do {
-            var decoder = try WorkerFrameDecoder<WorkerResponse>()
-            responses = try decoder.append(data)
-            try decoder.finish()
-        } catch { throw FileformError(.engineFailed, "The native worker returned an invalid protocol message.") }
         guard responses.count == 2, responses[0].id == handshake.id,
               case .handshake(let version) = responses[0].payload, version == WorkerProtocol.version,
               responses[1].id == request.id else {
@@ -206,18 +200,27 @@ private final class WorkerProcess: @unchecked Sendable {
         }
         return (reaped, exitStatus, cancelled)
     }
-    func collect(timeout: TimeInterval) async throws -> Data {
+    func collect(timeout: TimeInterval) async throws -> [WorkerResponse] {
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: .seconds(timeout))
         var tooLarge = false
-        var response = Data()
+        var protocolFailure = false
+        var receivedBytes = 0
+        var responses: [WorkerResponse] = []
+        var decoder = try WorkerFrameDecoder<WorkerResponse>()
         var buffer = [UInt8](repeating: 0, count: 65536)
         func drain() {
+            guard !tooLarge, !protocolFailure else { return }
             while true {
                 let count = read(stdout, &buffer, buffer.count)
                 if count <= 0 { break }
-                if response.count + count > 2 * WorkerProtocol.maximumFrameBytes + 8 { tooLarge = true; stop(); break }
-                response.append(contentsOf: buffer.prefix(count))
+                receivedBytes += count
+                if receivedBytes > 2 * WorkerProtocol.maximumFrameBytes + 8 { tooLarge = true; stop(); break }
+                do {
+                    responses.append(contentsOf: try decoder.append(Data(buffer.prefix(count))))
+                    if responses.count > 2 { protocolFailure = true; stop(); break }
+                } catch WorkerProtocolError.oversizedFrame { tooLarge = true; stop(); break }
+                catch { protocolFailure = true; stop(); break }
             }
         }
         while true {
@@ -227,11 +230,15 @@ private final class WorkerProcess: @unchecked Sendable {
             let state = poll()
             if state.done {
                 drain()
-                if Task.isCancelled || state.cancelled && !tooLarge && clock.now < deadline { throw CancellationError() }
+                if Task.isCancelled { throw CancellationError() }
                 guard !tooLarge else { throw FileformError(.resourceLimit, "Worker response exceeded its bounded protocol size.") }
+                guard !protocolFailure else { throw FileformError(.engineFailed, "The native worker returned an invalid protocol message.") }
+                if state.cancelled && clock.now < deadline { throw CancellationError() }
                 guard clock.now < deadline else { throw FileformError(.engineFailed, "The native worker timed out.") }
                 guard state.status == 0 else { throw FileformError(.engineFailed, "The native worker exited unexpectedly.") }
-                return response
+                do { try decoder.finish() }
+                catch { throw FileformError(.engineFailed, "The native worker returned a truncated protocol message.") }
+                return responses
             }
             // Cancellation must still wait for reaping before the caller removes scratch.
             await withCheckedContinuation { continuation in
