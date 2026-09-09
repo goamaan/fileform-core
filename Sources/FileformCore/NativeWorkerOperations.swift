@@ -30,7 +30,7 @@ public enum NativeWorkerOperations {
     private static func perform(_ operation: WorkerOperation) throws -> WorkerResponsePayload {
         let asset: WorkerAssetHandle
         switch operation {
-        case .inspect(let value), .preview(let value, _, _, _): asset = value
+        case .inspect(let value), .pdfFingerprint(let value), .preview(let value, _, _, _): asset = value
         case .handshake: throw WorkerProtocolError.invalidRequest
         }
         let before = try sourceIdentity(asset.descriptor)
@@ -47,6 +47,8 @@ public enum NativeWorkerOperations {
         else { throw FileformError(.unsupported, "Unsupported native input.") }
         guard try sourceIdentity(asset.descriptor) == before else { throw FileformError(.inputChanged, "Source changed.") }
         switch operation {
+        case .pdfFingerprint:
+            return .pdfFingerprint(try PDFStructuralFingerprint.compute(input))
         case .inspect:
             return .inspection(try WorkerInspectionResult(assetID: asset.assetID, inspection: inspection))
         case .preview(_, let descriptor, let dimension, let pageIndex):

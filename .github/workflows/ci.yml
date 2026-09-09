@@ -33,9 +33,14 @@ jobs:
           xcodebuild -version
           swift --version
       - name: Prepare source verification
-        run: command -v gpg || brew install gnupg
+        run: |
+          command -v gpg || brew install gnupg
+          command -v cmake || brew install cmake
+          command -v ninja || brew install ninja
       - name: Build pinned local-only media pack
         run: Tools/build-media-pack.sh
+      - name: Build pinned PDF optimization pack
+        run: Tools/build-pdf-pack.sh
       - name: Test image, document, table and media contracts
         # Unrelated codec tests must not contend with wall-clock worker teardown checks.
         # Tests that verify concurrency create their own explicit concurrent work.
@@ -46,8 +51,9 @@ jobs:
           python3 Tools/smoke-transformations.py
           python3 Tools/smoke-editing.py
           python3 Tools/smoke-media-trim.py
+          python3 Tools/smoke-pdf-optimization.py
       - name: Build development CLI delivery archive
-        run: Tools/package-cli.sh --with-media
+        run: Tools/package-cli.sh --with-media --with-pdf
       - name: Retain development CLI archive
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -61,6 +67,10 @@ jobs:
           name: core-build-evidence-${{ matrix.runner }}
           path: |
             Artifacts/MediaPack/manifest.json
+            Artifacts/PDFPack/manifest.json
+            Artifacts/PDFPack/linked-libraries.txt
+            Artifacts/pdf-build/*-configure.log
+            Artifacts/pdf-build/*-build.log
             Artifacts/MediaPack/build-flags.txt
             Artifacts/MediaPack/license-report.txt
             Artifacts/MediaPack/protocols.txt

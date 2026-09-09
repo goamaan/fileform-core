@@ -49,12 +49,20 @@ public struct NativeWorkerClient: Sendable {
                      warnings: ["This is a bounded sRGB preview, not a full-resolution conversion."], attempts: 1)
     }
 
+    public func pdfFingerprint(_ input: URL) async throws -> String {
+        let result = try await perform(input: input, previewDimension: nil, pageIndex: nil, fingerprint: true)
+        guard case .pdfFingerprint(let digest) = result.response.payload else {
+            throw FileformError(.verificationFailed, "The worker returned an invalid PDF fingerprint.")
+        }
+        return digest
+    }
+
     private struct Reply: Sendable {
         let response: WorkerResponse
         let identity: FileIdentity
         let preview: Data?
     }
-    private func perform(input: URL, previewDimension: Int?, pageIndex: Int?) async throws -> Reply {
+    private func perform(input: URL, previewDimension: Int?, pageIndex: Int?, fingerprint: Bool = false) async throws -> Reply {
         try Task.checkCancellation()
         guard timeout.isFinite, timeout > 0, timeout <= 300 else { throw FileformError(.invalidRequest, "Invalid worker timeout.") }
         let input = input.standardizedFileURL
@@ -75,7 +83,7 @@ public struct NativeWorkerClient: Sendable {
         let output = open(outputURL.path, O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC, 0o600)
         guard output >= 0 else { throw FileformError(.ioFailure, "Could not create worker output staging.") }
         defer { close(output) }
-        let operation: WorkerOperation = previewDimension.map {
+        let operation: WorkerOperation = fingerprint ? .pdfFingerprint(asset: .init(assetID: "source", descriptor: 3)) : previewDimension.map {
             .preview(asset: .init(assetID: "source", descriptor: 3), outputDescriptor: 4, maximumDimension: $0, pageIndex: pageIndex)
         } ?? .inspect(asset: .init(assetID: "source", descriptor: 3))
         let request = try WorkerRequest(operation: operation)

@@ -6,9 +6,20 @@ import FileformDomain
 /// by input limits; cooperative cancellation is checked between encode/verify steps.
 public actor ConversionEngine {
     private let mediaPackURL: URL?
+    private let pdfPackURL: URL?
+    private let workerExecutable: URL?
     private var loadedMedia: MediaBackend?
     let gate = JobGate() // Shared by operation-specific execution extensions.
-    public init(mediaPack: URL? = nil) { self.mediaPackURL = mediaPack }
+    public init(mediaPack: URL? = nil, pdfPack: URL? = nil, workerExecutable: URL? = nil) {
+        self.mediaPackURL = mediaPack; self.pdfPackURL = pdfPack; self.workerExecutable = workerExecutable
+    }
+    func pdfBackend() throws -> PDFOptimizationBackend {
+        guard let pdfPackURL else { throw FileformError(.engineUnavailable, "Install the PDF engine pack to optimize this PDF.") }
+        let worker = workerExecutable ?? ProcessInfo.processInfo.environment["FILEFORM_WORKER_PATH"].map { URL(fileURLWithPath: $0) }
+            ?? Bundle.main.executableURL!.deletingLastPathComponent().appendingPathComponent("fileform-worker")
+        guard FileManager.default.isExecutableFile(atPath: worker.path) else { throw FileformError(.engineUnavailable, "Install the native worker alongside the PDF engine.") }
+        return PDFOptimizationBackend(pack: try PDFPack(directory: pdfPackURL), worker: NativeWorkerClient(executable: worker, timeout: 120))
+    }
 
     func mediaBackend() throws -> MediaBackend {
         if let loadedMedia { return loadedMedia }
@@ -51,9 +62,9 @@ public actor ConversionEngine {
         switch inspection?.family {
         case .image: return ImageBackend.capabilities() + DocumentBackend.capabilities(for: inspection)
         case .media: return MediaBackend.capabilities(for: inspection, available: mediaAvailable, mp3Available: media?.pack.supportsMP3Encoding == true)
-        case .pdf: return DocumentBackend.capabilities(for: inspection)
+        case .pdf: return DocumentBackend.capabilities(for: inspection) + [PDFOptimizationBackend.capability(available: (try? pdfBackend()) != nil)]
         case .table: return TableBackend.capabilities(for: inspection)
-        case .none: return ImageBackend.capabilities() + MediaBackend.capabilities(for: nil, available: mediaAvailable, mp3Available: media?.pack.supportsMP3Encoding == true) + DocumentBackend.capabilities(for: nil) + TableBackend.capabilities(for: nil)
+        case .none: return ImageBackend.capabilities() + MediaBackend.capabilities(for: nil, available: mediaAvailable, mp3Available: media?.pack.supportsMP3Encoding == true) + DocumentBackend.capabilities(for: nil) + TableBackend.capabilities(for: nil) + [PDFOptimizationBackend.capability(available: (try? pdfBackend()) != nil)]
         default: return []
         }
     }
@@ -67,13 +78,14 @@ public actor ConversionEngine {
             switch capability.engine {
             case "imageio": families = [.image]; verification = "Reopen container, dimensions and alpha; check byte constraints."
             case "ffmpeg": families = [.media]; verification = "Decode all streams; verify codecs, dimensions and duration."
+            case "qpdf": families = [.pdf]; verification = "All-page decoded content, text, five boxes, rotation and bounded rendered pixels; strict structural checks and byte constraints."
             case "tables": families = [.table]; verification = "Reparse and compare every record and cell."
             default: families = inspection.map { [$0.family] } ?? ([OutputFormat.pdf, .txt].contains(capability.format) ? [.image, .pdf] : [.pdf])
                 verification = "Reopen page or text output; verify selected-page properties."
             }
             return OperationCapability(id: "file.convert:\(capability.engine):\(capability.format.rawValue)",
                 inputFamilies: families, capability: capability,
-                backendVersion: capability.engine == "ffmpeg" ? mediaVersion : os, verification: verification)
+                backendVersion: capability.engine == "ffmpeg" ? mediaVersion : (capability.engine == "qpdf" ? (try? pdfBackend().pack.version) : os), verification: verification)
         }
         if inspection == nil || inspection?.family == .image {
             for capability in ImageBackend.capabilities() {
@@ -113,14 +125,20 @@ public actor ConversionEngine {
 
     public func plan(_ request: ConversionRequest) async throws -> ConversionPlan {
         try validateOptions(request)
-        let inspection = try await inspect(request.input)
+        let inspection: Inspection
+        if request.format == .pdf, request.goal != .convert, DocumentBackend.recognizesPDF(request.input) { inspection = try await pdfBackend().worker.inspect(request.input) }
+        else { inspection = try await inspect(request.input) }
         try FileSafety.rejectSourceAliases(destination: request.destination, inputs: [inspection])
         if request.options.pageNumber != nil && inspection.family != .pdf {
             throw FileformError(.invalidRequest, "Page selection is only available for PDF inputs.")
         }
-        guard let capability = capabilities(for: inspection).first(where: { $0.format == request.format }),
+        guard let capability = capabilities(for: inspection).first(where: { $0.format == request.format && $0.goals.contains(request.goal) }),
               capability.available, capability.goals.contains(request.goal) else {
             throw FileformError(.unsupported, "This input/output operation is not available.")
+        }
+        if capability.engine == "qpdf" {
+            try await pdfBackend().validate(inspection, request: request)
+            return .init(request: request, inspection: inspection, engine: "qpdf", warnings: PDFOptimizationBackend.warnings)
         }
         if capability.engine == "documents" {
             try DocumentBackend.validate(inspection, request: request)
@@ -196,6 +214,7 @@ public actor ConversionEngine {
         let transaction = try OutputTransaction(destination: request.destination, input: request.input,
                                                 collisionPolicy: request.collisionPolicy)
         defer { transaction.cleanup() }
+        if validated.engine == "qpdf" { return try await pdfBackend().execute(validated, transaction: transaction, progress: progress) }
         if inspection.family == .media {
             return try await executeMedia(validated, transaction: transaction, progress: progress)
         }

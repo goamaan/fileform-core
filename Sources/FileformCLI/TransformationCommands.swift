@@ -8,12 +8,13 @@ struct Transform: AsyncParsableCommand {
     static let configuration = CommandConfiguration(abstract: "Validate or execute a versioned transformation request.")
     @Argument(help: "JSON transformation request file (maximum 1 MiB).") var request: String
     @Option(help: "Media engine pack directory.") var mediaPack: String?
+    @Option(help: "PDF engine pack directory; also accepts FILEFORM_PDF_PACK.") var pdfPack: String?
     @Flag(help: "Inspect and emit an immutable plan without writing outputs.") var dryRun = false
     @Flag(help: "Emit structured errors and results.") var json = false
     mutating func run() async throws {
         do {
             let request = try readContract(TransformationRequest.self, path: request)
-            let engine = makeEngine(mediaPack)
+            let engine = makeEngine(mediaPack, pdfPath: pdfPack)
             let dryRun = dryRun
             try await cancellable {
                 let plan = try await engine.plan(request)
@@ -43,6 +44,7 @@ struct SetupApply: AsyncParsableCommand {
     @Option(parsing: .singleValue, help: "One slot=path binding in recorded slot order; repeat for each source.") var asset: [String] = []
     @Option(help: "Destination file or atomic output directory.") var output: String
     @Option(help: "Media engine pack directory.") var mediaPack: String?
+    @Option(help: "PDF engine pack directory; also accepts FILEFORM_PDF_PACK.") var pdfPack: String?
     @Flag(help: "Inspect and emit a plan without creating outputs.") var dryRun = false
     @Flag(help: "Emit structured errors and results.") var json = false
     mutating func run() async throws {
@@ -56,7 +58,7 @@ struct SetupApply: AsyncParsableCommand {
                 return .init(id: String(parts[0]), url: URL(fileURLWithPath: String(parts[1])))
             }
             let request = try recipe.bind(assets: assets, destination: URL(fileURLWithPath: output))
-            let engine = makeEngine(mediaPack); let dryRun = dryRun
+            let engine = makeEngine(mediaPack, pdfPath: pdfPack); let dryRun = dryRun
             try await cancellable {
                 let plan = try await engine.plan(request)
                 if dryRun { try emit(plan) }

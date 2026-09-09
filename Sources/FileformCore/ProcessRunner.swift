@@ -19,7 +19,7 @@ private final class ProcessCompletion: @unchecked Sendable {
 enum ProcessRunner {
     /// Redirecting both streams to bounded scratch files avoids pipe-buffer
     /// deadlocks. Each invocation owns and removes its scratch directory.
-    static func run(executable: URL, arguments: [String], timeout: TimeInterval = 60) async throws -> ProcessOutput {
+    static func run(executable: URL, arguments: [String], timeout: TimeInterval = 60, monitoredOutput: URL? = nil, maximumOutputBytes: Int64 = 512 * 1024 * 1024) async throws -> ProcessOutput {
         try Task.checkCancellation()
         let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("fileform-process-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
@@ -47,6 +47,7 @@ enum ProcessRunner {
             while completion.status == nil {
                 try Task.checkCancellation()
                 guard ContinuousClock.now < deadline else { throw FileformError(.resourceLimit, "The media engine exceeded its time limit.") }
+                if let monitoredOutput, let size = try? monitoredOutput.resourceValues(forKeys: [.fileSizeKey]).fileSize, Int64(size) > maximumOutputBytes { throw FileformError(.resourceLimit, "The engine exceeded its output size limit.") }
                 for url in [stdoutURL, stderrURL] {
                     let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
                     guard size <= 16 * 1024 * 1024 else { throw FileformError(.resourceLimit, "The media engine exceeded its diagnostic output limit.") }

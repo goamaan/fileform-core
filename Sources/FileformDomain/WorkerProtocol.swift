@@ -36,6 +36,7 @@ public struct WorkerAssetHandle: Codable, Equatable, Sendable {
 public enum WorkerOperation: Codable, Equatable, Sendable {
     case handshake
     case inspect(asset: WorkerAssetHandle)
+    case pdfFingerprint(asset: WorkerAssetHandle)
     /// The output descriptor must be a distinct, inherited, job-owned writable
     /// scratch file. It is never a final destination. Page indices are zero-based.
     case preview(asset: WorkerAssetHandle, outputDescriptor: Int32, maximumDimension: Int, pageIndex: Int?)
@@ -43,7 +44,7 @@ public enum WorkerOperation: Codable, Equatable, Sendable {
     fileprivate func validate() throws {
         switch self {
         case .handshake: break
-        case .inspect(let asset): try asset.validate()
+        case .inspect(let asset), .pdfFingerprint(let asset): try asset.validate()
         case .preview(let asset, let output, let dimension, let page):
             try asset.validate()
             guard output >= 3, output != asset.descriptor,
@@ -170,6 +171,7 @@ public enum WorkerResponsePayload: Codable, Sendable {
     case handshake(protocolVersion: Int)
     case inspection(WorkerInspectionResult)
     case preview(WorkerPreviewArtifact)
+    case pdfFingerprint(String)
     case failure(WorkerFailureCode)
 
     fileprivate func validate() throws {
@@ -179,6 +181,8 @@ public enum WorkerResponsePayload: Codable, Sendable {
         case .preview(let artifact): try artifact.validate()
         case .inspection(let result):
             try WorkerAssetHandle(assetID: result.assetID, descriptor: 3).validate()
+        case .pdfFingerprint(let digest):
+            guard digest.count == 64, digest.allSatisfy({ $0.isHexDigit }) else { throw WorkerProtocolError.invalidRequest }
         case .failure: break
         }
     }

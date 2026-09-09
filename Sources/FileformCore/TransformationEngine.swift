@@ -5,13 +5,19 @@ import FileformDomain
 public extension TransformationRequest {
     init(legacy: ConversionRequest) throws {
         try self.init(assets: [.init(id: "source", url: legacy.input)],
-                      operation: .conversion(.init(goal: legacy.goal, options: legacy.options)),
-                      output: .init(destination: legacy.destination, format: legacy.format), collisionPolicy: legacy.collisionPolicy)
+                      operation: .conversion(.init(goal: legacy.goal, options: legacy.options, color: legacy.format == .pdf && legacy.goal != .convert ? .preserve : .convertToSRGB, metadata: legacy.format == .pdf && legacy.goal != .convert ? .preserve : .removeDescriptive)),
+                      output: .init(destination: legacy.destination, format: legacy.format), fidelity: legacy.format == .pdf && legacy.goal != .convert ? .requireLossless : .allowDeclaredLosses, collisionPolicy: legacy.collisionPolicy)
     }
     func legacyConversion() throws -> ConversionRequest {
         try validate()
         guard case .conversion(let parameters) = operation else {
             throw FileformError(.unsupported, "This operation has a request schema but no installed execution adapter yet.")
+        }
+        if output.format == .pdf, parameters.goal != .convert {
+            guard parameters.color == .preserve, parameters.metadata == .preserve, fidelity == .requireLossless else {
+                throw FileformError(.unsupported, "PDF structural optimization requires preserved color and metadata with lossless fidelity.")
+            }
+            return .init(input: assets[0].url, destination: output.destination, format: .pdf, goal: parameters.goal, options: parameters.options, collisionPolicy: collisionPolicy)
         }
         guard parameters.color == .convertToSRGB, parameters.metadata == .removeDescriptive,
               fidelity == .allowDeclaredLosses else {

@@ -21,6 +21,7 @@ struct Inspect: AsyncParsableCommand {
     @Argument(help: "Input file.") var input: String
     @Flag(help: "Write a structured report to stdout.") var json = false
     @Option(help: "Media pack directory; also accepts FILEFORM_MEDIA_PACK.") var mediaPack: String?
+    @Option(help: "PDF pack directory; also accepts FILEFORM_PDF_PACK. Structural PDF optimization retains every page without lossy encoding.") var pdfPack: String?
     mutating func run() async throws {
         do {
             let value: Inspection
@@ -28,7 +29,7 @@ struct Inspect: AsyncParsableCommand {
                 let client = NativeWorkerClient(executable: URL(fileURLWithPath: worker))
                 let url = URL(fileURLWithPath: input)
                 value = try await cancellable { try await client.inspect(url) }
-            } else { value = try await makeEngine(mediaPack).inspect(URL(fileURLWithPath: input)) }
+            } else { value = try await makeEngine(mediaPack, pdfPath: pdfPack).inspect(URL(fileURLWithPath: input)) }
             if json { try emit(value) }
             else {
                 print("\(value.input.lastPathComponent): \(value.detectedType), \(value.identity.bytes) bytes")
@@ -45,9 +46,10 @@ struct Capabilities: AsyncParsableCommand {
     @Option(help: "Restrict outputs to an inspected input file.") var input: String?
     @Flag(help: "Write a structured report to stdout.") var json = false
     @Option(help: "Media pack directory; also accepts FILEFORM_MEDIA_PACK.") var mediaPack: String?
+    @Option(help: "PDF pack directory; also accepts FILEFORM_PDF_PACK. Structural PDF optimization retains every page without lossy encoding.") var pdfPack: String?
     mutating func run() async throws {
         do {
-            let engine = makeEngine(mediaPack)
+            let engine = makeEngine(mediaPack, pdfPath: pdfPack)
             let inspection: Inspection?
             if let input { inspection = try await engine.inspect(URL(fileURLWithPath: input)) } else { inspection = nil }
             if inventory { try emit(await engine.capabilityInventory(for: inspection)); return }
@@ -70,6 +72,7 @@ struct JobArguments: ParsableArguments {
     @Option(help: "Minimum video bitrate for fit-size, in bits per second.") var minimumVideoBitrate: Int = 150_000
     @Option(help: "Explicit one-based PDF page to export. Text extraction otherwise reads all pages.") var page: Int?
     @Option(help: "Media pack directory; also accepts FILEFORM_MEDIA_PACK.") var mediaPack: String?
+    @Option(help: "PDF pack directory; also accepts FILEFORM_PDF_PACK. Structural PDF optimization retains every page without lossy encoding.") var pdfPack: String?
     @Flag(help: "Inspect and plan without encoding or creating output files.") var dryRun = false
     @Flag(help: "Write one terminal JSON report to stdout; progress stays on stderr.") var json = false
 
@@ -83,7 +86,7 @@ struct JobArguments: ParsableArguments {
                                                            maxDimension: maxDimension, maximumBytes: maximumBytes, background: background,
                                                            minimumVideoBitrate: minimumVideoBitrate, pageNumber: page),
                                             collisionPolicy: collision)
-            let engine = makeEngine(mediaPack)
+            let engine = makeEngine(mediaPack, pdfPath: pdfPack)
             let plan = try await engine.plan(request)
             if dryRun { try emit(plan); return }
             for warning in plan.warnings { diagnostic(warning) }
@@ -119,13 +122,17 @@ func emit<T: Encodable>(_ value: T) throws {
     FileHandle.standardOutput.write(try encoder.encode(value)); FileHandle.standardOutput.write(Data("\n".utf8))
 }
 func diagnostic(_ value: String) { FileHandle.standardError.write(Data((value + "\n").utf8)) }
-func makeEngine(_ path: String?) -> ConversionEngine {
-    let path = path ?? ProcessInfo.processInfo.environment["FILEFORM_MEDIA_PACK"]
-    if let path { return ConversionEngine(mediaPack: URL(fileURLWithPath: path)) }
-    let adjacent = Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("MediaPack")
-    let available = adjacent.flatMap { FileManager.default.fileExists(atPath: $0.appendingPathComponent("manifest.json").path) ? $0 : nil }
-    return ConversionEngine(mediaPack: available)
+func makeEngine(_ path: String?, pdfPath: String? = nil) -> ConversionEngine {
+    let adjacent = Bundle.main.executableURL?.deletingLastPathComponent()
+    func pack(_ explicit: String?, environment: String, name: String) -> URL? {
+        if let path = explicit ?? ProcessInfo.processInfo.environment[environment] { return URL(fileURLWithPath: path) }
+        let url = adjacent?.appendingPathComponent(name)
+        return url.flatMap { FileManager.default.fileExists(atPath: $0.appendingPathComponent("manifest.json").path) ? $0 : nil }
+    }
+    return ConversionEngine(mediaPack: pack(path, environment: "FILEFORM_MEDIA_PACK", name: "MediaPack"),
+                            pdfPack: pack(pdfPath, environment: "FILEFORM_PDF_PACK", name: "PDFPack"))
 }
+
 func fail(_ error: Error, json: Bool) throws -> Never {
     let error = error as? FileformError ?? (error is CancellationError ? FileformError(.cancelled, "Conversion cancelled; owned partial outputs removed.") : FileformError(.ioFailure, error.localizedDescription))
     if json { try emit(error) } else { diagnostic("\(error.code.rawValue): \(error.message)") }
