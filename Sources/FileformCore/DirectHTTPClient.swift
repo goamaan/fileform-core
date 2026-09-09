@@ -68,10 +68,10 @@ public struct DirectHTTPClient: Sendable {
 
     public func inspect(_ url: URL, policy: HTTPAcquisitionPolicy) async throws -> HTTPResourceMetadata {
         try policy.validate(url)
-        return try await transfer(url, method: "HEAD", policy: policy, writer: nil, progress: { _, _ in }).metadata
+        return try await transfer(url, method: "HEAD", policy: policy, writer: nil, matching: nil, progress: { _, _ in }).metadata
     }
 
-    public func download(_ url: URL, policy: HTTPAcquisitionPolicy,
+    public func download(_ url: URL, policy: HTTPAcquisitionPolicy, matching expected: HTTPResourceMetadata? = nil,
                          progress: @escaping @Sendable (Int64, Int64?) -> Void = { _, _ in }) async throws -> DownloadedResource {
         try policy.validate(url); try Task.checkCancellation()
         let directory = stagingRoot.appendingPathComponent("fileform-download-\(UUID().uuidString)", isDirectory: true)
@@ -84,16 +84,16 @@ public struct DirectHTTPClient: Sendable {
         }
         let writer = try FileHandle(forWritingTo: payload)
         defer { try? writer.close() }
-        let result = try await transfer(url, method: "GET", policy: policy, writer: writer, progress: progress)
+        let result = try await transfer(url, method: "GET", policy: policy, writer: writer, matching: expected, progress: progress)
         try Task.checkCancellation()
         try writer.synchronize(); try writer.close()
         retained = true
         return DownloadedResource(url: payload, directory: directory, result: result)
     }
 
-    private func transfer(_ url: URL, method: String, policy: HTTPAcquisitionPolicy, writer: FileHandle?,
+    private func transfer(_ url: URL, method: String, policy: HTTPAcquisitionPolicy, writer: FileHandle?, matching expected: HTTPResourceMetadata?,
                           progress: @escaping @Sendable (Int64, Int64?) -> Void) async throws -> HTTPTransferResult {
-        let transfer = HTTPTransfer(policy: policy, writer: writer, progress: progress)
+        let transfer = HTTPTransfer(policy: policy, writer: writer, expected: expected, progress: progress)
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 transfer.start(url: url, method: method, continuation: continuation)
@@ -113,6 +113,7 @@ private struct HTTPTransferResult: Sendable {
 private final class HTTPTransfer: NSObject, URLSessionDataDelegate, @unchecked Sendable {
     let policy: HTTPAcquisitionPolicy
     let writer: FileHandle?
+    let expected: HTTPResourceMetadata?
     let progress: @Sendable (Int64, Int64?) -> Void
     private let lock = NSLock()
     private var cancelled = false
@@ -124,8 +125,8 @@ private final class HTTPTransfer: NSObject, URLSessionDataDelegate, @unchecked S
     private var received: Int64 = 0
     private var redirects = 0
     private var digest = SHA256()
-    init(policy: HTTPAcquisitionPolicy, writer: FileHandle?, progress: @escaping @Sendable (Int64, Int64?) -> Void) {
-        self.policy = policy; self.writer = writer; self.progress = progress
+    init(policy: HTTPAcquisitionPolicy, writer: FileHandle?, expected: HTTPResourceMetadata?, progress: @escaping @Sendable (Int64, Int64?) -> Void) {
+        self.policy = policy; self.writer = writer; self.expected = expected; self.progress = progress
     }
     func start(url: URL, method: String, continuation: CheckedContinuation<HTTPTransferResult, Error>) {
         self.continuation = continuation
@@ -141,6 +142,11 @@ private final class HTTPTransfer: NSObject, URLSessionDataDelegate, @unchecked S
         self.session = session
         var request = URLRequest(url: url); request.httpMethod = method
         request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
+        if let tag = expected?.entityTag, !tag.hasPrefix("W/"), tag.utf8.count <= 4096 {
+            request.setValue(tag, forHTTPHeaderField: "If-Match")
+        } else if let modified = expected?.lastModified, modified.utf8.count <= 256 {
+            request.setValue(modified, forHTTPHeaderField: "If-Unmodified-Since")
+        }
         let task = session.dataTask(with: request)
         lock.lock(); self.task = task; let wasCancelled = cancelled; lock.unlock()
         task.resume()
@@ -178,6 +184,9 @@ private final class HTTPTransfer: NSObject, URLSessionDataDelegate, @unchecked S
                     completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
         guard failure == nil else { completionHandler(.cancel); return }
         do {
+            if (response as? HTTPURLResponse)?.statusCode == 412 {
+                throw FileformError(.inputChanged, "The source changed after lookup. Look up the link again.")
+            }
             guard let http = response as? HTTPURLResponse, http.statusCode == 200, let url = http.url else {
                 throw FileformError(.engineFailed, "The source did not return a complete successful HTTP response.")
             }
@@ -186,6 +195,15 @@ private final class HTTPTransfer: NSObject, URLSessionDataDelegate, @unchecked S
             guard coding == nil || coding == "identity" else { throw FileformError(.unsupported, "The source ignored the request for an uncompressed download.") }
             let length = response.expectedContentLength >= 0 ? response.expectedContentLength : nil
             guard length.map({ $0 <= policy.maximumBytes }) ?? true else { throw FileformError(.resourceLimit, "The source exceeds the download byte limit.") }
+            if let expected {
+                guard url == expected.url,
+                      expected.entityTag.map({ $0 == http.value(forHTTPHeaderField: "ETag") }) ?? true,
+                      expected.lastModified.map({ $0 == http.value(forHTTPHeaderField: "Last-Modified") }) ?? true,
+                      expected.contentType.map({ $0 == response.mimeType }) ?? true,
+                      expected.expectedBytes.map({ length == nil || $0 == length }) ?? true else {
+                    throw FileformError(.inputChanged, "The source changed after lookup. Look up the link again.")
+                }
+            }
             metadata = .init(url: url, contentType: response.mimeType, expectedBytes: length,
                              entityTag: http.value(forHTTPHeaderField: "ETag"), lastModified: http.value(forHTTPHeaderField: "Last-Modified"))
             completionHandler(.allow)
@@ -206,6 +224,9 @@ private final class HTTPTransfer: NSObject, URLSessionDataDelegate, @unchecked S
         if wasCancelled { continuation?.resume(throwing: CancellationError()); return }
         if let failure { continuation?.resume(throwing: failure); return }
         if error != nil { continuation?.resume(throwing: FileformError(.engineFailed, "The download failed or timed out. Check the source and try again.")); return }
+        if writer != nil, let expectedBytes = expected?.expectedBytes, expectedBytes != received {
+            continuation?.resume(throwing: FileformError(.inputChanged, "The source length changed after lookup.")); return
+        }
         guard let metadata, writer == nil || (received > 0 && metadata.expectedBytes.map({ $0 == received }) ?? true) else {
             continuation?.resume(throwing: FileformError(.verificationFailed, "The download is empty or does not match its declared length.")); return
         }

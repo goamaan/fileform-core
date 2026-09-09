@@ -23,7 +23,8 @@ defer { downloaded.discard() }
   bounded. This local client is not a hosted proxy or DNS/SSRF boundary.
 - Metadata inspection uses HEAD, retaining HEAD through redirects. Metadata is
   advisory: a later download is a new request, not an immutable remote snapshot.
-  The acquisition planner still needs entity/variant binding and change review.
+  The direct fetch planner binds these fields and uses the optional `matching:`
+  argument on download to reject changed response properties.
 - An ephemeral URLSession has no cookie storage, credential storage or response
   cache. It requests direct connections, no content encoding, and no cookies.
   Authentication challenges other than ordinary server trust are cancelled.
@@ -43,7 +44,8 @@ defer { downloaded.discard() }
   cancellation during receiving. Progress reports actual retained bytes and an
   optional declared total on the transport callback queue.
 
-The raw payload is **not verified media**. MIME type and remote metadata cannot
+The raw payload is **not verified media**. The [direct fetch adapter](Direct-fetch.md)
+provides verification and publication for supported media containers. MIME type and remote metadata cannot
 prove file contents. Callers must preserve the lease while reading, inspect and
 verify content, apply the declared transformation if required, and publish through
 the ordinary file transaction boundary. Avoid storing full source query strings

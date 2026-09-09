@@ -86,7 +86,7 @@ private final class HTTPByteProbe: @unchecked Sendable {
     func set(_ value: Int64) { lock.lock(); self.value = value; lock.unlock() }
 }
 
-private final class HTTPFixture: @unchecked Sendable {
+final class HTTPFixture: @unchecked Sendable {
     let directory: URL
     private let process: Process
     private let completion: DispatchSemaphore
@@ -99,11 +99,18 @@ private final class HTTPFixture: @unchecked Sendable {
         process.terminationHandler = { _ in completed.signal() }
         process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
         process.arguments = ["-u", "-c", #"""
-import http.server,time
+import http.server,time,io,wave
+buffer=io.BytesIO()
+with wave.open(buffer,'wb') as w:
+ w.setparams((1,2,16000,0,'NONE','not compressed'));w.writeframes(b'\x01\x00'*16000)
+wave_payload=buffer.getvalue()
+def payload(path):
+ if path=='/bad.wav':return b'<html>Not a recording</html>'
+ return wave_payload if path.endswith('.wav') else b'A'*262144
 class Handler(http.server.BaseHTTPRequestHandler):
  def log_message(self,*a):pass
  def do_HEAD(self):
-  self.send_response(200);self.send_header('Content-Length','262144');self.end_headers()
+  self.send_response(200);self.send_header('Content-Length',str(len(payload(self.path))));self.send_header('Content-Type','audio/wav' if self.path.endswith('.wav') else 'application/octet-stream');self.send_header('ETag','\"v1\"');self.end_headers()
  def do_GET(self):
   p=self.path
   if p=='/stall':time.sleep(2)
@@ -113,15 +120,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
    self.send_response(401);self.send_header('WWW-Authenticate','Basic realm="fixture"');self.end_headers();return
   if self.headers.get('Cookie') or self.headers.get('Authorization'):
    self.send_response(403);self.end_headers();return
+  if p=='/media.wav' and self.headers.get('If-Match')!='\"v1\"':
+   self.send_response(428);self.end_headers();return
   self.send_response(200)
+  self.send_header('ETag','\"v2\"' if p=='/changed.wav' else '\"v1\"')
   if p=='/encoded':self.send_header('Content-Encoding','gzip')
-  if p not in ['/unknown','/slow']:self.send_header('Content-Length','262144')
-  self.send_header('Content-Type','application/octet-stream');self.send_header('Set-Cookie','private=must-not-be-sent');self.end_headers()
+  if p not in ['/unknown','/slow']:self.send_header('Content-Length',str(len(payload(p))))
+  self.send_header('Content-Type','audio/wav' if p.endswith('.wav') else 'application/octet-stream');self.send_header('Set-Cookie','private=must-not-be-sent');self.end_headers()
   try:
    if p=='/truncated':self.wfile.write(b'A');return
    if p=='/slow':
     for i in range(256):self.wfile.write(b'A'*1024);self.wfile.flush();time.sleep(.02)
-   else:self.wfile.write(b'A'*262144)
+   else:self.wfile.write(payload(p))
   except (BrokenPipeError,ConnectionResetError):pass
 server=http.server.ThreadingHTTPServer(('127.0.0.1',0),Handler)
 print('%07d'%server.server_port,flush=True);server.serve_forever()

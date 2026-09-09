@@ -26,6 +26,8 @@ public extension ConversionEngine {
     func plan(_ request: TransformationRequest) async throws -> TransformationPlan {
         try request.validate()
         switch request.operation {
+        case .fetch:
+            return try await DirectFetchBackend(media: mediaBackend()).plan(request)
         case .mediaTrim:
             let inspection = try await inspect(request.assets[0].url)
             return try await MediaTrimBackend(media: mediaBackend()).plan(request, inspection: inspection)
@@ -57,6 +59,13 @@ public extension ConversionEngine {
         guard plan.schemaVersion == 1 else { throw FileformError(.invalidRequest, "Unsupported transformation plan version.") }
         try plan.request.validate()
         switch plan.request.operation {
+        case .fetch:
+            try await gate.acquire()
+            do {
+                let result = try await DirectFetchBackend(media: mediaBackend()).execute(plan, progress: progress)
+                await gate.release()
+                return result
+            } catch { await gate.release(); throw error }
         case .mediaTrim:
             try await gate.acquire()
             do {

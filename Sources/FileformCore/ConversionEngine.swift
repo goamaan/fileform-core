@@ -98,6 +98,15 @@ public actor ConversionEngine {
                     operationID: operation, cardinality: cardinality))
             }
         }
+        if inspection == nil {
+            for format in DirectFetchBackend.formats {
+                let capability = Capability(format: format, goals: [.convert], engine: "direct-http", available: mediaVersion != nil,
+                    limitation: "Explicit direct HTTP(S) media only; original bytes kept, no web-page extraction. Byte/redirect/time limits and complete media decode before saving.")
+                routes.append(.init(id: "link.fetch:direct-http:\(format.rawValue)", inputFamilies: [], capability: capability,
+                    backendVersion: mediaVersion, verification: "Response validators, retained-byte ceiling, forced media container, full decode and SHA-256 before exclusive publication.",
+                    operationID: .fetch, localProcessing: false))
+            }
+        }
         return .init(engineVersion: "0.1.0-dev", platformVersion: os, inputFamily: inspection?.family, routes: routes)
     }
 

@@ -33,18 +33,25 @@ struct MediaBackend: Sendable {
             let has_b_frames: Int?
             struct SideData: Decodable { let rotation: Int? }
         }
-        struct Format: Decodable { let format_name: String?; let duration: String?; let bit_rate: String?; let start_time: String? }
+        struct Format: Decodable { let format_name: String?; let duration: String?; let bit_rate: String?; let start_time: String?; let tags: [String: String]? }
         let streams: [Stream]
         let format: Format
         var videos: [Stream] { streams.filter { $0.codec_type == "video" && $0.disposition?["attached_pic"] != 1 } }
         var audios: [Stream] { streams.filter { $0.codec_type == "audio" } }
     }
 
-    func probe(_ input: URL) async throws -> Probe {
+    func probe(_ input: URL, forcedDemuxer: String? = nil) async throws -> Probe {
+        let options: [String]
+        if let forcedDemuxer {
+            guard ["mov", "wav", "flac", "mp3"].contains(forcedDemuxer) else {
+                throw FileformError(.invalidRequest, "Unsupported forced media demuxer.")
+            }
+            options = ["-f", forcedDemuxer] + (forcedDemuxer == "mov" ? ["-enable_drefs", "0"] : [])
+        } else { options = [] }
         let response = try await ProcessRunner.run(executable: pack.ffprobe, arguments: [
             "-v", "error", "-max_alloc", "268435456", "-protocol_whitelist", "file,pipe",
-            "-show_format", "-show_streams", "-of", "json", input.path
-        ], timeout: 30)
+            "-show_format", "-show_streams", "-of", "json"
+        ] + options + [input.path], timeout: 30)
         guard response.status == 0, let probe = try? JSONDecoder().decode(Probe.self, from: response.stdout) else {
             throw FileformError(.unsupported, "The media could not be inspected. It may be damaged or use an unsupported format.")
         }

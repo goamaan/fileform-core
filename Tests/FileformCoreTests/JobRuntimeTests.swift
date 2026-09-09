@@ -113,7 +113,11 @@ private func expectInventoryMatchesLegacy(_ inventory: CapabilityInventory, lega
     let conversions = inventory.routes.filter { $0.operationID == .conversion }
     #expect(conversions.count == legacy.count)
     #expect(Set(inventory.routes.map(\.id)).count == inventory.routes.count)
-    #expect(inventory.routes.allSatisfy { $0.outputFormat != .mp3 && $0.operationID != .fetch })
+    #expect(conversions.allSatisfy { $0.outputFormat != .mp3 })
+    for route in inventory.routes where route.operationID == .fetch {
+        #expect(!route.localProcessing && route.backend == "direct-http" && route.inputFamilies.isEmpty)
+        #expect(route.available == legacy.contains { $0.engine == "ffmpeg" && $0.available })
+    }
     for (route, previous) in zip(conversions, legacy) {
         #expect(route.outputFormat == previous.format)
         #expect(route.goals == previous.goals)
@@ -125,7 +129,7 @@ private func expectInventoryMatchesLegacy(_ inventory: CapabilityInventory, lega
     }
 }
 
-@Test func capabilityInventoriesRetainLegacyRoutesWithoutAdvertisingSchemaOnlyOperations() async throws {
+@Test func capabilityInventoriesRetainLegacyRoutesAndDeclareNetworkFetchSeparately() async throws {
     let fixture = try Fixture(); defer { fixture.cleanup() }
     let input = try fixture.image()
     let native = ConversionEngine()

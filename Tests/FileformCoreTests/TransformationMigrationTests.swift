@@ -64,7 +64,7 @@ private func migratedRequest(_ input: URL, output: URL) throws -> Transformation
     #expect(!FileManager.default.fileExists(atPath: destination.path))
 }
 
-@Test func schemaOnlyOperationsAndUnsupportedFidelityPoliciesFailClosed() async throws {
+@Test func MissingMediaPackAndUnsupportedFidelityPoliciesFailClosed() async throws {
     let fixture = try Fixture(); defer { fixture.cleanup() }
     let input = try fixture.image()
     let before = try Data(contentsOf: input)
@@ -77,8 +77,8 @@ private func migratedRequest(_ input: URL, output: URL) throws -> Transformation
     for (operation, format, assets) in operations {
         let request = try TransformationRequest(assets: assets, operation: operation,
                                                output: .init(destination: destination, format: format, cardinality: operation.cardinality))
-        do { _ = try await engine.plan(request); Issue.record("Schema-only operation unexpectedly planned") }
-        catch let error as FileformError { #expect(error.code == .unsupported) }
+        do { _ = try await engine.plan(request); Issue.record("Fetch unexpectedly planned without its verification pack") }
+        catch let error as FileformError { #expect(error.code == .engineUnavailable) }
         let untrusted = TransformationPlan(request: request, inputs: [], warnings: [])
         await #expect(throws: FileformError.self) { try await engine.run(untrusted) }
     }
