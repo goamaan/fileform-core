@@ -31,6 +31,14 @@ extension Fixture {
 @Suite(.enabled(if: FileManager.default.fileExists(atPath: packURL.appendingPathComponent("manifest.json").path),
                "Build the pinned media pack with Tools/build-media-pack.sh to run media integration tests."))
 struct MediaTests {
+    @Test func damagedImageCannotBecomeReadyAsZeroDimensionVideo() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let input = fixture.url("damaged.png")
+        try Data("not an image\n".utf8).write(to: input)
+        let engine = ConversionEngine(mediaPack: packURL)
+        await #expect(throws: FileformError.self) { try await engine.inspect(input) }
+    }
+
     @Test func audioRoundTripIsComplete() async throws {
         let fixture = try Fixture(); defer { fixture.cleanup() }
         let input = try fixture.wav()

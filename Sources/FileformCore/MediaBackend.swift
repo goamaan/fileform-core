@@ -64,6 +64,9 @@ struct MediaBackend: Sendable {
               let duration = info.format.duration.flatMap(Double.init), duration.isFinite, duration > 0 else {
             throw FileformError(.unsupported, "No finite audio or video duration could be established.")
         }
+        guard info.videos.allSatisfy({ ($0.width ?? 0) > 0 && ($0.height ?? 0) > 0 }) else {
+            throw FileformError(.unsupported, "The picture dimensions could not be read. This file may be damaged or incomplete.")
+        }
         guard duration <= 6 * 60 * 60 else { throw FileformError(.resourceLimit, "The current media workflow accepts recordings up to six hours.") }
         var warnings = [String]()
         if info.videos.count > 1 || info.audios.count > 1 { warnings.append("Multiple video or audio tracks need an explicit selection workflow that is not available yet.") }
