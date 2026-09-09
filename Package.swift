@@ -8,7 +8,8 @@ let package = Package(
     products: [
         .library(name: "FileformDomain", targets: ["FileformDomain"]),
         .library(name: "FileformCore", targets: ["FileformCore"]),
-        .executable(name: "fileform", targets: ["FileformCLI"])
+        .executable(name: "fileform", targets: ["FileformCLI"]),
+        .executable(name: "fileform-worker", targets: ["FileformWorker"])
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser", exact: "1.8.2")
@@ -16,6 +17,7 @@ let package = Package(
     targets: [
         .target(name: "FileformDomain"),
         .target(name: "FileformCore", dependencies: ["FileformDomain"]),
+        .executableTarget(name: "FileformWorker", dependencies: ["FileformCore", "FileformDomain"]),
         .executableTarget(name: "FileformCLI", dependencies: [
             "FileformCore", "FileformDomain",
             .product(name: "ArgumentParser", package: "swift-argument-parser")

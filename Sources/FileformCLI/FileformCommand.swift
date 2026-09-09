@@ -12,17 +12,23 @@ extension AlphaBackground: ExpressibleByArgument {}
 struct FileformCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "fileform", abstract: "Convert files locally and verify the result.",
-        version: "0.1.0-dev", subcommands: [Inspect.self, Capabilities.self, Convert.self, Compress.self, Fit.self, Transform.self, Setup.self])
+        version: "0.1.0-dev", subcommands: [Inspect.self, Capabilities.self, Convert.self, Compress.self, Fit.self, Transform.self, Setup.self, Preview.self])
 }
 
 struct Inspect: AsyncParsableCommand {
+    @Option(help: "Use this native worker executable for isolated image/PDF inspection.") var worker: String?
     static let configuration = CommandConfiguration(abstract: "Inspect a local file's content.")
     @Argument(help: "Input file.") var input: String
     @Flag(help: "Write a structured report to stdout.") var json = false
     @Option(help: "Media pack directory; also accepts FILEFORM_MEDIA_PACK.") var mediaPack: String?
     mutating func run() async throws {
         do {
-            let value = try await makeEngine(mediaPack).inspect(URL(fileURLWithPath: input))
+            let value: Inspection
+            if let worker {
+                let client = NativeWorkerClient(executable: URL(fileURLWithPath: worker))
+                let url = URL(fileURLWithPath: input)
+                value = try await cancellable { try await client.inspect(url) }
+            } else { value = try await makeEngine(mediaPack).inspect(URL(fileURLWithPath: input)) }
             if json { try emit(value) }
             else {
                 print("\(value.input.lastPathComponent): \(value.detectedType), \(value.identity.bytes) bytes")

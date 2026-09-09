@@ -50,4 +50,16 @@ with tempfile.TemporaryDirectory(prefix='fileform-transform-smoke-') as folder:
     assert all(route['operationID'] == 'file.convert' for route in inventory['routes'])
     assert hashlib.sha256(source.read_bytes()).hexdigest() == digest
     assert not list(work.glob('.fileform-*'))
-print('Transformation CLI passed: actual output, dry-run, source retention, portable setup rebinding, bounded JSON and inventory.')
+    subprocess.run([str(root / 'Tools/generate-fixtures.sh'), str(work / 'inputs')], check=True, stdout=subprocess.DEVNULL)
+    image = work / 'inputs/Studio chart.png'
+    original = image.read_bytes()
+    isolated = run('inspect', image, '--worker', root / '.build/debug/fileform-worker', '--json')
+    assert isolated['family'] == 'image'
+    preview = run('preview', image, '--output', work / 'preview.png', '--maximum-dimension', '240', '--json')
+    assert preview['status'] == 'succeeded'
+    import struct
+    png = (work / 'preview.png').read_bytes()
+    assert png[:8] == b'\x89PNG\r\n\x1a\n'
+    assert struct.unpack('>II', png[16:24]) == (240, 180)
+    assert image.read_bytes() == original
+print('Transformation CLI passed: actual output, dry-run, source retention, portable setup rebinding, bounded JSON, inventory and real isolated PNG preview.')

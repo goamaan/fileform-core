@@ -39,7 +39,9 @@ jobs:
       - name: Test image, document, table and media contracts
         run: swift test
       - name: Verify CLI end to end
-        run: Tools/smoke-cli.sh
+        run: |
+          Tools/smoke-cli.sh
+          python3 Tools/smoke-transformations.py
       - name: Build development CLI delivery archive
         run: Tools/package-cli.sh --with-media
       - name: Retain development CLI archive

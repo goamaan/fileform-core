@@ -77,3 +77,25 @@ func readContract<T: Decodable>(_ type: T.Type, path: String) throws -> T {
     catch let error as FileformError { throw error }
     catch { throw FileformError(.invalidRequest, "Malformed or unsupported JSON contract.") }
 }
+
+struct Preview: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(abstract: "Render a bounded PNG preview in the native worker.")
+    @Argument(help: "Image or PDF source.") var input: String
+    @Option(help: "New PNG output file; originals are never overwritten.") var output: String
+    @Option(help: "Worker executable; defaults to fileform-worker beside this CLI.") var worker: String?
+    @Option(help: "Longest edge in pixels, from 1 to 4096.") var maximumDimension: Int = 1024
+    @Option(help: "One-based PDF page.") var page: Int?
+    @Flag(help: "Emit structured errors and results.") var json = false
+    mutating func run() async throws {
+        do {
+            guard page.map({ $0 > 0 }) ?? true else { throw FileformError(.invalidRequest, "PDF pages are one-based.") }
+            let executable = worker.map { URL(fileURLWithPath: $0) }
+                ?? Bundle.main.executableURL!.deletingLastPathComponent().appendingPathComponent("fileform-worker")
+            let client = NativeWorkerClient(executable: executable)
+            let input = URL(fileURLWithPath: input), output = URL(fileURLWithPath: output)
+            let dimension = maximumDimension, index = page.map { $0 - 1 }
+            let result = try await cancellable { try await client.exportPreview(input, destination: output, maximumDimension: dimension, pageIndex: index) }
+            try emit(result)
+        } catch { try fail(error, json: json) }
+    }
+}
