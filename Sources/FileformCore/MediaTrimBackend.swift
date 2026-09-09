@@ -113,7 +113,7 @@ struct MediaTrimBackend {
             throw FileformError(.unsupported, "Trim removes document-level metadata and does not promise complete lossless preservation.")
         }
         let format = request.output.format
-        guard MediaBackend.formats.contains(format) else { throw FileformError(.unsupported, "This trim output is not installed. MP3 requires a separate encoder pack.") }
+        guard MediaBackend.formats.contains(format), format != .mp3 else { throw FileformError(.unsupported, "This trim output is not supported. Convert a complete recording to MP3, or trim to WAV, FLAC or M4A.") }
         try FileSafety.verifyUnchanged(inspection)
         try FileSafety.rejectSourceAliases(destination: request.output.destination, inputs: [inspection])
         let source = try await media.probe(inspection.input)

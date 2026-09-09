@@ -40,7 +40,7 @@ network/decoder work terminates.
 
 Supported direct source types are MP4, MOV, M4A, WAV, FLAC and MP3. A different
 container or HTML payload fails instead of receiving a misleading extension.
-MP3 here means preserving an existing MP3; no MP3 encoder route was added. Limits
+MP3 here means preserving an existing MP3; separate [MP3 conversion](MP3-output.md) requires the MP3-enabled media pack. Limits
 include the requested ceiling (at most 8 GiB), 120 seconds per network transfer,
 six hours of media, four video/eight audio streams (16 streams total), eight audio
 channels per track, 192 kHz, 64 million pixels per video frame and ten minutes for
@@ -55,7 +55,7 @@ these routes as requiring network access and the verification pack.
 
 `DirectFetchTests` verifies byte identity, plan serialization, conditional requests,
 changed validators, false MIME/body types, forged source binding, exclusive name
-handling and the distinction between network fetch and unavailable MP3 encoding.
+handling and the distinction between network fetch and separately available MP3 encoding.
 Together with the transport and existing suites, 98 local tests passed.
 
 ```sh

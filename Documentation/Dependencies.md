@@ -8,6 +8,7 @@ Reviewed against upstream sources September 8, 2026. These are engineering packa
 | Swift Argument Parser 1.8.2 | Apache-2.0 | Exact SwiftPM dependency and Package.resolved; include its license in CLI archives |
 | Apple ImageIO/CoreGraphics, AVFoundation, PDFKit, Vision | Platform SDK/framework terms | Use system APIs; test runtime and deployment-target availability |
 | FFmpeg + ffprobe | LGPL baseline; enabled GPL components change the build license; nonfree configurations may not be redistributable | Start with a reproducible LGPL build, without GPL/nonfree options; inspect all enabled libraries. Prefer a separately packaged tool adapter. Broad-media release remains gated on that build |
+| LAME 3.100 encoder | LGPL-2.0-or-later; optional decoder excluded | Hash-pinned static encoder in FFmpeg pack `9.0.1-fileform.2`; source, notices and build flags included. See [MP3 output](MP3-output.md). |
 | libvips | LGPL-2.1 license; codec dependencies have additional terms | Review exact dependency graph and linking/replacement obligations; no arbitrary prebuilt bundle |
 | qpdf | Apache-2.0 in current upstream; bundled dependencies retain notices | Pin version and inventory dependencies before distribution |
 | Pandoc | GPL | Optional standalone document tool under its own license; review actual communication/aggregation architecture and source distribution before shipping; do not link/copy it into proprietary app code |

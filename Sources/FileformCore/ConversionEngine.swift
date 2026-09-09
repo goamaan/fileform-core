@@ -46,13 +46,14 @@ public actor ConversionEngine {
     }
 
     public func capabilities(for inspection: Inspection? = nil) -> [Capability] {
-        let mediaAvailable = (try? mediaBackend()) != nil
+        let media = try? mediaBackend()
+        let mediaAvailable = media != nil
         switch inspection?.family {
         case .image: return ImageBackend.capabilities() + DocumentBackend.capabilities(for: inspection)
-        case .media: return MediaBackend.capabilities(for: inspection, available: mediaAvailable)
+        case .media: return MediaBackend.capabilities(for: inspection, available: mediaAvailable, mp3Available: media?.pack.supportsMP3Encoding == true)
         case .pdf: return DocumentBackend.capabilities(for: inspection)
         case .table: return TableBackend.capabilities(for: inspection)
-        case .none: return ImageBackend.capabilities() + MediaBackend.capabilities(for: nil, available: mediaAvailable) + DocumentBackend.capabilities(for: nil) + TableBackend.capabilities(for: nil)
+        case .none: return ImageBackend.capabilities() + MediaBackend.capabilities(for: nil, available: mediaAvailable, mp3Available: media?.pack.supportsMP3Encoding == true) + DocumentBackend.capabilities(for: nil) + TableBackend.capabilities(for: nil)
         default: return []
         }
     }
@@ -81,8 +82,8 @@ public actor ConversionEngine {
             }
         }
         if inspection == nil || inspection?.family == .media {
-            for format in MediaBackend.formats where inspection == nil ||
-                ([OutputFormat.mp4, .mov].contains(format) ? inspection?.videoCodec != nil : inspection?.audioCodec != nil) {
+            for format in MediaBackend.formats where format != .mp3 && (inspection == nil ||
+                ([OutputFormat.mp4, .mov].contains(format) ? inspection?.videoCodec != nil : inspection?.audioCodec != nil)) {
                 let capability = Capability(format: format, goals: [.convert], engine: "ffmpeg", available: mediaVersion != nil,
                     limitation: "Exact frame/sample trim; eligible H.264/AAC MP4-family fast copy snaps outward. Constant-rate video, explicit audio selection, bounded packet inventory; MP3 unavailable.")
                 routes.append(.init(id: "media.trim:ffmpeg:\(format.rawValue)", inputFamilies: [.media], capability: capability,
@@ -141,10 +142,11 @@ public actor ConversionEngine {
         }
         if inspection.family == .media {
             let media = try mediaBackend()
-            try media.validate(inspection, request: request)
+            try await media.validate(inspection, request: request)
             var warnings = ["Descriptive metadata, chapters and cover artwork are removed from the output."]
-            if [.wav, .flac, .m4a].contains(request.format) && inspection.videoCodec != nil { warnings.append("This creates an audio-only output; the original video remains unchanged.") }
+            if [.wav, .flac, .m4a, .mp3].contains(request.format) && inspection.videoCodec != nil { warnings.append("This creates an audio-only output; the original video remains unchanged.") }
             if request.format == .wav { warnings.append("WAV output uses 16-bit PCM audio.") }
+            if request.format == .mp3 { warnings.append("MP3 is lossy and may lose audio detail. Output preserves mono/stereo and sample rate; encoder delay and padding are recorded for gapless playback.") }
             if request.format == .flac { warnings.append("FLAC compresses PCM audio losslessly; it cannot restore detail already lost in the source recording.") }
             let draft = ConversionPlan(request: request, inspection: inspection, engine: capability.engine, warnings: [])
             if media.canRemux(draft) { warnings.append("Compatible H.264/AAC streams will be copied without re-encoding.") }

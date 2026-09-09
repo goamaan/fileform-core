@@ -4,7 +4,7 @@ import FileformDomain
 
 struct MediaBackend: Sendable {
     let pack: MediaPack
-    static let formats: [OutputFormat] = [.mp4, .mov, .m4a, .wav, .flac]
+    static let formats: [OutputFormat] = [.mp4, .mov, .m4a, .wav, .flac, .mp3]
 
     struct Probe: Decodable {
         struct Stream: Decodable {
@@ -96,17 +96,27 @@ struct MediaBackend: Sendable {
                      warnings: warnings)
     }
 
-    static func capabilities(for inspection: Inspection?, available: Bool) -> [Capability] {
+    static func capabilities(for inspection: Inspection?, available: Bool, mp3Available: Bool = false) -> [Capability] {
         formats.filter { format in
             guard let inspection else { return true }
             if [.mp4, .mov].contains(format) { return inspection.videoCodec != nil }
             return inspection.audioCodec != nil
-        }.map { .init(format: $0, goals: [.convert, .compress, .fit], engine: "ffmpeg", available: available,
-                      limitation: available ? "Single-track SDR media; extra metadata is removed." : "Install the verified media engine pack.") }
+        }.map { .init(format: $0, goals: [.convert, .compress, .fit], engine: "ffmpeg", available: available && ($0 != .mp3 || mp3Available),
+                      limitation: available && ($0 != .mp3 || mp3Available)
+                        ? ($0 == .mp3 ? "Lossy MP3; one mono/stereo track at 32, 44.1 or 48 kHz; descriptive metadata is removed." : "Single-track SDR media; extra metadata is removed.")
+                        : "Install the verified media engine pack with the requested encoder.") }
     }
 
-    func validate(_ inspection: Inspection, request: ConversionRequest) throws {
+    func validate(_ inspection: Inspection, request: ConversionRequest) async throws {
         let videoOutput = [.mp4, .mov].contains(request.format)
+        if request.format == .mp3 {
+            guard pack.supportsMP3Encoding else { throw FileformError(.engineUnavailable, "Install a media pack with the MP3 encoder.") }
+            let source = try await probe(request.input)
+            guard let audio = source.audios.first, [1, 2].contains(audio.channels ?? 0),
+                  ["32000", "44100", "48000"].contains(audio.sample_rate ?? "") else {
+                throw FileformError(.unsupported, "MP3 output currently preserves mono or stereo audio at 32, 44.1 or 48 kHz. Explicit downmixing or resampling is not available.")
+            }
+        }
         if videoOutput && !inspection.warnings.isEmpty { throw FileformError(.unsupported, inspection.warnings[0]) }
         if !videoOutput && inspection.audioStreams != 1 {
             throw FileformError(.unsupported, "Choose an input with one audio track. Explicit selection between multiple tracks is not available yet.")
@@ -124,7 +134,7 @@ struct MediaBackend: Sendable {
         if [.mp4, .mov].contains(request.format) && inspection.videoCodec == nil {
             throw FileformError(.invalidRequest, "Choose an audio output for an audio-only input.")
         }
-        if [.wav, .flac, .m4a].contains(request.format) && inspection.audioCodec == nil {
+        if [.wav, .flac, .m4a, .mp3].contains(request.format) && inspection.audioCodec == nil {
             throw FileformError(.invalidRequest, "This input has no audio track to extract.")
         }
         if request.options.background != nil { throw FileformError(.invalidRequest, "Background color is only valid for image conversion.") }
@@ -175,7 +185,7 @@ struct MediaBackend: Sendable {
                 guard videoRate >= request.options.minimumVideoBitrate else {
                     throw FileformError(.targetUnmet, "The byte limit cannot accommodate a complete video at the chosen minimum bitrate. Increase the limit or explicitly change your constraints.")
                 }
-            } else if request.format == .m4a {
+            } else if [.m4a, .mp3].contains(request.format) {
                 audioRate = Int(max(0, min(128_000, budget)))
                 guard audioRate >= 48_000 else { throw FileformError(.targetUnmet, "The byte limit is too small for the complete recording at the minimum 48 kb/s audio bitrate.") }
             }
@@ -188,6 +198,10 @@ struct MediaBackend: Sendable {
                               "-allow_sw", "1", "-b:v", "\(videoRate)", "-pix_fmt", "yuv420p", "-filter_threads", "2"]
             }
             switch request.format {
+            case .mp3:
+                // MPEG-1 Layer III uses discrete CBR rates. Round down to respect fit budgets.
+                let rate = [48_000, 56_000, 64_000, 80_000, 96_000, 112_000, 128_000].last { $0 <= audioRate } ?? 48_000
+                arguments += ["-c:a", "libmp3lame", "-b:a", "\(rate)", "-write_xing", "1", "-id3v2_version", "0", "-write_id3v1", "0"]
             case .wav: arguments += ["-c:a", "pcm_s16le"]
             case .flac: arguments += ["-c:a", "flac", "-compression_level", "8"]
             default: arguments += ["-c:a", "aac", "-b:a", "\(audioRate)"]
@@ -219,7 +233,7 @@ struct MediaBackend: Sendable {
             guard info.videos.isEmpty, info.audios.count == 1 else { throw FileformError(.verificationFailed, "The output failed audio stream verification.") }
         }
         let expectedCodec: String = switch plan.request.format {
-        case .wav: "pcm_s16le"; case .flac: "flac"; default: "aac"
+        case .wav: "pcm_s16le"; case .flac: "flac"; case .mp3: "mp3"; default: "aac"
         }
         if let audio = info.audios.first, audio.codec_name != expectedCodec {
             throw FileformError(.verificationFailed, "The audio codec does not match the requested output.")
@@ -230,7 +244,7 @@ struct MediaBackend: Sendable {
             }
         }
         let containers = info.format.format_name?.split(separator: ",").map(String.init) ?? []
-        let expectedContainer = switch plan.request.format { case .wav: "wav"; case .flac: "flac"; default: "mov" }
+        let expectedContainer = switch plan.request.format { case .wav: "wav"; case .flac: "flac"; case .mp3: "mp3"; default: "mov" }
         guard containers.contains(expectedContainer) else { throw FileformError(.verificationFailed, "The media container does not match the selected output.") }
         let decoded = try await ProcessRunner.run(executable: pack.ffmpeg, arguments: [
             "-hide_banner", "-nostdin", "-v", "error", "-xerror", "-err_detect", "explode",

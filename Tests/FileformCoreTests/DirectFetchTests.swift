@@ -56,11 +56,12 @@ struct DirectFetchTests {
         await #expect(throws: FileformError.self) { try await engine.run(mismatch) }
         #expect(try FileManager.default.contentsOfDirectory(atPath: fixture.directory.path).isEmpty)
     }
-    @Test func fetchInventoryDeclaresNetworkAndDoesNotInventMp3Encoding() async throws {
+    @Test func fetchInventoryDeclaresNetworkAndMP3EncodingMatchesPack() async throws {
         let engine = ConversionEngine(mediaPack: fetchPack)
         let inventory = await engine.capabilityInventory()
         #expect(inventory.routes.contains { $0.operationID == .fetch && $0.outputFormat == .mp3 && $0.available && !$0.localProcessing })
-        #expect(!inventory.routes.contains { $0.operationID == .conversion && $0.outputFormat == .mp3 && $0.available })
+        let supportsMP3 = try MediaPack(directory: fetchPack).supportsMP3Encoding
+        #expect(inventory.routes.contains { $0.operationID == .conversion && $0.outputFormat == .mp3 && $0.available } == supportsMP3)
     }
     private func request(_ fixture: HTTPFixture, path: String = "/media.wav", output: URL, format: OutputFormat = .wav,
                          collision: CollisionPolicy = .fail) throws -> TransformationRequest {

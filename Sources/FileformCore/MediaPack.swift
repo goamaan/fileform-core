@@ -6,6 +6,7 @@ import FileformDomain
 public struct MediaPack: Sendable {
     public let directory: URL
     public let version: String
+    let supportsMP3Encoding: Bool
     let ffmpeg: URL
     let ffprobe: URL
 
@@ -16,6 +17,7 @@ public struct MediaPack: Sendable {
             let version: String
             let networkProtocols: Bool
             let executables: [String: String]
+            let audioEncoders: [String]?
         }
         let manifestURL = directory.appendingPathComponent("manifest.json")
         guard let data = try? Data(contentsOf: manifestURL), data.count <= 64 * 1024,
@@ -32,6 +34,7 @@ public struct MediaPack: Sendable {
             }
         }
         self.directory = directory; self.version = manifest.version
+        self.supportsMP3Encoding = manifest.audioEncoders?.contains("libmp3lame") == true
         self.ffmpeg = directory.appendingPathComponent("bin/ffmpeg")
         self.ffprobe = directory.appendingPathComponent("bin/ffprobe")
     }
