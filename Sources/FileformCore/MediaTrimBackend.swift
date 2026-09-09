@@ -321,7 +321,7 @@ struct MediaTrimBackend {
         return report.packets
     }
 
-    private func continuousAudioSamples(_ input: URL, stream: MediaBackend.Probe.Stream, sampleRate: Int32) async throws -> Int64 {
+    func continuousAudioSamples(_ input: URL, stream: MediaBackend.Probe.Stream, sampleRate: Int32) async throws -> Int64 {
         guard let index = stream.index else { throw FileformError(.unsupported, "The audio stream has no stable index.") }
         let result = try await ProcessRunner.run(executable: media.pack.ffprobe, arguments: [
             "-v", "error", "-max_alloc", "268435456", "-protocol_whitelist", "file,pipe", "-threads", "2",

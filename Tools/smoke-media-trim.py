@@ -116,8 +116,25 @@ with tempfile.TemporaryDirectory(prefix='fileform-trim-smoke-') as directory:
     inventory = run('capabilities', '--input', video, '--inventory')
     assert any(route['operationID'] == 'media.trim' and route['available'] for route in inventory['routes'])
     assert all(route['outputFormat'] != 'mp3' for route in inventory['routes'])
+    timeline = run('media', 'inspect', source, '--json')
+    assert seconds(timeline['duration']) == 6 and timeline['audioTracks'][0]['decodedSamples'] == 288000
+    waveform = run('media', 'waveform', source, '--bins', '32', '--json')
+    assert len(waveform['buckets']) == 32
+    assert seconds(waveform['buckets'][-1]['interval']['end']) == 6
+    assert all(abs(bucket['maximum'][0] - 12000 / 32768) < 0.0001 for bucket in waveform['buckets'])
+    normalized = work / 'normalized.wav'
+    run('media', 'preview', source, '--output', normalized, '--json')
+    assert tool(ffmpeg, '-v', 'error', '-i', normalized, '-c:a', 'pcm_s16le', '-f', 's16le', '-') == pcm
+    assert run('media', 'preview', source, '--output', alias, '--json', status=2)['code'] == 'invalid_request'
+    assert run('media', 'waveform', gapped, '--json', status=3)['code'] == 'unsupported'
+    video_timeline = run('media', 'inspect', video, '--json')
+    assert video_timeline['video']['frameCount'] == 60
+    poster = work / 'poster.png'
+    run('media', 'preview', video, '--poster-time', '1.35', '--max-dimension', '80', '--output', poster, '--json')
+    pixel = tool(ffmpeg, '-v', 'error', '-i', poster, '-vf', 'scale=1:1', '-pix_fmt', 'rgb24', '-f', 'rawvideo', '-')
+    assert len(pixel) == 3 and all(abs(pixel[c] - (52, 211, 26)[c]) <= 12 for c in range(3))
     assert hashlib.sha256(source.read_bytes()).digest() == digest
     assert hashlib.sha256(video.read_bytes()).digest() == original_video
     assert not list(work.glob('.fileform-*'))
 
-print('Media trim CLI smoke passed: exact samples/frame markers, gapped-audio rejection, snapped packet copy, dry-run, audio extraction, source preservation, aliases, errors and truthful capabilities.')
+print('Media trim CLI smoke passed: exact samples/frame markers, gapped-audio rejection, snapped packet copy, dry-run, audio extraction, measured waveforms/posters/playback previews, source preservation, aliases, errors and truthful capabilities.')

@@ -8,7 +8,7 @@ extension TrimMode: ExpressibleByArgument {}
 
 struct MediaCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(commandName: "media", abstract: "Edit local audio and video with measured timing.",
-                                                     subcommands: [MediaTrim.self])
+                                                     subcommands: [MediaTrim.self, MediaInspect.self, MediaWaveformCommand.self, MediaPreviewCommand.self])
 }
 
 struct MediaTrim: AsyncParsableCommand {
@@ -45,7 +45,7 @@ struct MediaTrim: AsyncParsableCommand {
         } catch { try fail(error, json: json) }
     }
 
-    private static func time(_ text: String) throws -> MediaTime {
+    static func time(_ text: String) throws -> MediaTime {
         guard text.utf8.count <= 64 else { throw FileformError(.invalidRequest, "The time value is too long.") }
         let rational = text.split(separator: "/", omittingEmptySubsequences: false)
         if rational.count == 2, let ticks = Int64(rational[0]), let scale = Int32(rational[1]) {
@@ -62,5 +62,60 @@ struct MediaTrim: AsyncParsableCommand {
         for _ in 0..<decimalPlaces { scale *= 10 }
         guard let ticks = Int64(parts.joined()) else { throw FileformError(.invalidRequest, "The time value is out of range.") }
         return .init(ticks: ticks, timescale: scale)
+    }
+}
+
+struct MediaPreviewArguments: ParsableArguments {
+    @Argument(help: "Local recording.") var input: String
+    @Option(help: "Verified media pack directory; FILEFORM_MEDIA_PACK is also accepted.") var mediaPack: String?
+    @Flag(help: "Emit structured errors.") var json = false
+    func service() throws -> MediaPreviewService {
+        guard let path = mediaPack ?? ProcessInfo.processInfo.environment["FILEFORM_MEDIA_PACK"] else {
+            throw FileformError(.engineUnavailable, "Provide --media-pack or FILEFORM_MEDIA_PACK for media preview operations.")
+        }
+        return MediaPreviewService(mediaPack: URL(fileURLWithPath: path))
+    }
+}
+struct MediaInspect: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "inspect", abstract: "Measure the recording's exact frame/sample timeline and audio tracks.")
+    @OptionGroup var source: MediaPreviewArguments
+    mutating func run() async throws {
+        do {
+            let service = try source.service(), input = URL(fileURLWithPath: source.input)
+            try await cancellable { try emit(await service.inspect(input)) }
+        } catch { try fail(error, json: source.json) }
+    }
+}
+struct MediaWaveformCommand: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "waveform", abstract: "Emit measured per-channel waveform envelopes with exact sample intervals.")
+    @OptionGroup var source: MediaPreviewArguments
+    @Option(help: "Selected audio-track ordinal; required for multitrack recordings.") var audioStream: Int?
+    @Option(help: "Maximum waveform bucket count, from 16 to 4096.") var bins = 512
+    mutating func run() async throws {
+        do {
+            let service = try source.service(), input = URL(fileURLWithPath: source.input), audio = audioStream, bins = bins
+            try await cancellable { try emit(await service.waveform(for: service.inspect(input), audioStream: audio, bins: bins)) }
+        } catch { try fail(error, json: source.json) }
+    }
+}
+struct MediaPreviewCommand: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "preview", abstract: "Export a verified normalized playback file or a measured video poster.")
+    @OptionGroup var source: MediaPreviewArguments
+    @Option(help: "New output path. Playback uses MP4 for video and WAV for audio; a poster uses PNG.") var output: String
+    @Option(help: "Audio-track ordinal for playback preview.") var audioStream: Int?
+    @Flag(help: "Omit audio from a video playback preview.") var mute = false
+    @Option(help: "Optional poster time in decimal seconds or ticks/timescale. Otherwise create a playback preview.") var posterTime: String?
+    @Option(help: "Maximum picture dimension; 64–1920 for playback, 1–4096 for posters.") var maxDimension = 1280
+    mutating func run() async throws {
+        do {
+            guard posterTime == nil || (audioStream == nil && !mute) else { throw FileformError(.invalidRequest, "Poster export does not select audio.") }
+            let service = try source.service(), input = URL(fileURLWithPath: source.input), output = URL(fileURLWithPath: output)
+            let time = try posterTime.map(MediaTrim.time), audio = audioStream, mute = mute, size = maxDimension
+            try await cancellable {
+                let timeline = try await service.inspect(input)
+                if let time { try emit(await service.exportPoster(for: timeline, destination: output, at: time, maximumDimension: size)) }
+                else { try emit(await service.exportPlaybackPreview(for: timeline, destination: output, audioStream: audio, muteAudio: mute, maximumDimension: size)) }
+            }
+        } catch { try fail(error, json: source.json) }
     }
 }
