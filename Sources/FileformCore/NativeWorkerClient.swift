@@ -57,12 +57,25 @@ public struct NativeWorkerClient: Sendable {
         return digest
     }
 
+    /// Render full pages through inherited descriptors. A nil destination validates
+    /// page geometry without publishing or encoding an image.
+    public func rasterPage(_ input: URL, destination: URL? = nil, pageIndex: Int, clockwiseRotation: Int = 0,
+                           dpi: Int, format: OutputFormat, quality: Double) async throws -> WorkerRasterArtifact {
+        let operation = WorkerOperation.pageRaster(asset: .init(assetID: "source", descriptor: 3),
+            outputDescriptor: destination == nil ? nil : 4, pageIndex: pageIndex, clockwiseRotation: clockwiseRotation,
+            dpi: dpi, format: format, quality: quality)
+        let result = try await perform(input: input, previewDimension: nil, pageIndex: nil, rasterOperation: operation, rasterDestination: destination)
+        guard case .pageRaster(let metadata) = result.response.payload, metadata.format == format,
+              (destination == nil) == (metadata.bytes == nil) else { throw FileformError(.verificationFailed, "Invalid page raster response.") }
+        return metadata
+    }
+
     private struct Reply: Sendable {
         let response: WorkerResponse
         let identity: FileIdentity
         let preview: Data?
     }
-    private func perform(input: URL, previewDimension: Int?, pageIndex: Int?, fingerprint: Bool = false) async throws -> Reply {
+    private func perform(input: URL, previewDimension: Int?, pageIndex: Int?, fingerprint: Bool = false, rasterOperation: WorkerOperation? = nil, rasterDestination: URL? = nil) async throws -> Reply {
         try Task.checkCancellation()
         guard timeout.isFinite, timeout > 0, timeout <= 300 else { throw FileformError(.invalidRequest, "Invalid worker timeout.") }
         let input = input.standardizedFileURL
@@ -83,9 +96,9 @@ public struct NativeWorkerClient: Sendable {
         let output = open(outputURL.path, O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC, 0o600)
         guard output >= 0 else { throw FileformError(.ioFailure, "Could not create worker output staging.") }
         defer { close(output) }
-        let operation: WorkerOperation = fingerprint ? .pdfFingerprint(asset: .init(assetID: "source", descriptor: 3)) : previewDimension.map {
+        let operation: WorkerOperation = rasterOperation ?? (fingerprint ? .pdfFingerprint(asset: .init(assetID: "source", descriptor: 3)) : previewDimension.map {
             .preview(asset: .init(assetID: "source", descriptor: 3), outputDescriptor: 4, maximumDimension: $0, pageIndex: pageIndex)
-        } ?? .inspect(asset: .init(assetID: "source", descriptor: 3))
+        } ?? .inspect(asset: .init(assetID: "source", descriptor: 3)))
         let request = try WorkerRequest(operation: operation)
         let handshake = try WorkerRequest(operation: .handshake)
         var message = try WorkerFrameCodec.encode(handshake)
@@ -108,6 +121,13 @@ public struct NativeWorkerClient: Sendable {
             throw FileformError(error, "The native worker could not process this file (\(code.rawValue)).")
         }
         guard try FileSafety.identity(input) == identity else { throw FileformError(.inputChanged, "The source changed during worker processing.") }
+        if let rasterDestination {
+            guard case .pageRaster(let metadata) = responses[1].payload,
+                  let bytes = metadata.bytes, try FileSafety.identity(outputURL).bytes == bytes else { throw FileformError(.verificationFailed, "Incomplete raster output.") }
+            // Destination is coordinator-owned scratch. copyItem refuses existing files.
+            try Task.checkCancellation()
+            try FileManager.default.copyItem(at: outputURL, to: rasterDestination)
+        }
         let preview: Data?
         if previewDimension != nil {
             let handle = try FileHandle(forReadingFrom: outputURL); defer { try? handle.close() }

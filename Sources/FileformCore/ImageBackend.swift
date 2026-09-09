@@ -106,13 +106,14 @@ enum ImageBackend {
         return result
     }
 
-    static func encode(_ image: CGImage, format: OutputFormat, quality: Double, destination: URL) throws {
+    static func encode(_ image: CGImage, format: OutputFormat, quality: Double, destination: URL, dpi: Int? = nil) throws {
         guard let type = format.imageType,
               let writer = CGImageDestinationCreateWithURL(destination as CFURL, type as CFString, 1, nil) else {
             throw FileformError(.engineUnavailable, "This Mac cannot write the selected image format.")
         }
-        let properties: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: quality,
+        var properties: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: quality,
                                           kCGImagePropertyOrientation: 1]
+        if let dpi { properties[kCGImagePropertyDPIWidth] = dpi; properties[kCGImagePropertyDPIHeight] = dpi }
         CGImageDestinationAddImage(writer, image, properties as CFDictionary)
         guard CGImageDestinationFinalize(writer) else {
             throw FileformError(.engineFailed, "Image encoding failed. Check available memory and disk space.")

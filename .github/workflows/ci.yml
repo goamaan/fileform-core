@@ -52,6 +52,7 @@ jobs:
           python3 Tools/smoke-editing.py
           python3 Tools/smoke-media-trim.py
           python3 Tools/smoke-pdf-optimization.py
+          python3 Tools/smoke-pdf-raster.py
       - name: Build development CLI delivery archive
         run: Tools/package-cli.sh --with-media --with-pdf
       - name: Retain development CLI archive

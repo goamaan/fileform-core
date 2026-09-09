@@ -15,10 +15,14 @@ public actor ConversionEngine {
     }
     func pdfBackend() throws -> PDFOptimizationBackend {
         guard let pdfPackURL else { throw FileformError(.engineUnavailable, "Install the PDF engine pack to optimize this PDF.") }
+        return PDFOptimizationBackend(pack: try PDFPack(directory: pdfPackURL), worker: try nativeWorker())
+    }
+
+    func nativeWorker() throws -> NativeWorkerClient {
         let worker = workerExecutable ?? ProcessInfo.processInfo.environment["FILEFORM_WORKER_PATH"].map { URL(fileURLWithPath: $0) }
             ?? Bundle.main.executableURL!.deletingLastPathComponent().appendingPathComponent("fileform-worker")
-        guard FileManager.default.isExecutableFile(atPath: worker.path) else { throw FileformError(.engineUnavailable, "Install the native worker alongside the PDF engine.") }
-        return PDFOptimizationBackend(pack: try PDFPack(directory: pdfPackURL), worker: NativeWorkerClient(executable: worker, timeout: 120))
+        guard FileManager.default.isExecutableFile(atPath: worker.path) else { throw FileformError(.engineUnavailable, "Install the native worker alongside Fileform.") }
+        return NativeWorkerClient(executable: worker, timeout: 120)
     }
 
     func mediaBackend() throws -> MediaBackend {
@@ -109,6 +113,14 @@ public actor ConversionEngine {
                 routes.append(.init(id: operation.rawValue + ":pdfkit:pdf", inputFamilies: [.image, .pdf], capability: capability,
                     backendVersion: os, verification: "Reopen every PDF; compare page count, order, text, boxes and rotation before atomic publication.",
                     operationID: operation, cardinality: cardinality))
+            }
+        }
+        if inspection == nil || [.pdf, .image].contains(inspection!.family) {
+            for format in [OutputFormat.png, .jpeg] {
+                let capability = Capability(format: format, goals: [.convert], engine: "page-raster", available: (try? nativeWorker()) != nil,
+                    limitation: "Selected pages at 36–600 DPI; 64 million pixels / 16384-pixel edge, no silent downscale. sRGB rasterization loses editable text, vectors, forms and signatures.")
+                routes.append(.init(id: "pdf.rasterize:worker:\(format.rawValue)", inputFamilies: [.pdf, .image], capability: capability,
+                    backendVersion: os, verification: "Worker renders every selected page; complete image decode, container and dimensions checked before atomic folder publication.", operationID: .pdfRasterize, cardinality: .directory))
             }
         }
         if inspection == nil {

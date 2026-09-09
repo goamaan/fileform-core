@@ -32,20 +32,26 @@ final class OutputTransaction {
     let destination: URL
     let collisionPolicy: CollisionPolicy
     private var cleaned = false
-    private let source: URL
-    private let sourceIdentity: FileIdentity
+    private let sources: [(url: URL, identity: FileIdentity)]
+    private let directoryOutput: Bool
 
-    init(destination: URL, input: URL, collisionPolicy: CollisionPolicy) throws {
+    convenience init(destination: URL, input: URL, collisionPolicy: CollisionPolicy) throws {
+        try self.init(destination: destination, inputs: [input], collisionPolicy: collisionPolicy, directoryOutput: false)
+    }
+
+    init(destination: URL, inputs: [URL], collisionPolicy: CollisionPolicy, directoryOutput: Bool) throws {
+        guard !inputs.isEmpty else { throw FileformError(.invalidRequest, "Output needs source bindings.") }
+        self.directoryOutput = directoryOutput
         guard destination.isFileURL, !destination.lastPathComponent.isEmpty else {
             throw FileformError(.invalidRequest, "Choose a local output file.")
         }
         let final = destination.standardizedFileURL
-        guard final.resolvingSymlinksInPath() != input.standardizedFileURL.resolvingSymlinksInPath() else {
+        guard inputs.allSatisfy({ final.resolvingSymlinksInPath() != $0.standardizedFileURL.resolvingSymlinksInPath() }) else {
             throw FileformError(.invalidRequest, "The output must be different from the original.")
         }
         self.destination = final; self.collisionPolicy = collisionPolicy
-        self.source = input; self.sourceIdentity = try FileSafety.identity(input)
-        try Self.rejectAlias(final, sourceIdentity: sourceIdentity)
+        self.sources = try inputs.map { ($0, try FileSafety.identity($0)) }
+        for source in sources { try Self.rejectAlias(final, sourceIdentity: source.identity) }
         let parent = final.deletingLastPathComponent()
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: parent.path, isDirectory: &isDirectory), isDirectory.boolValue else {
@@ -69,14 +75,16 @@ final class OutputTransaction {
         guard candidate.deletingLastPathComponent().standardizedFileURL == directory.standardizedFileURL else {
             throw FileformError(.invalidRequest, "Cannot finalize a file not owned by this job.")
         }
-        guard try FileSafety.identity(source) == sourceIdentity else {
-            throw FileformError(.inputChanged, "The source changed before output publication.")
-        }
+
         for suffix in 0..<1000 {
             try Task.checkCancellation()
-            let target = suffix == 0 ? destination : destination.deletingLastPathComponent()
-                .appendingPathComponent("\(destination.deletingPathExtension().lastPathComponent)-\(suffix).\(destination.pathExtension)")
-            try Self.rejectAlias(target, sourceIdentity: sourceIdentity)
+            let renamed = directoryOutput ? "\(destination.lastPathComponent)-\(suffix)" : "\(destination.deletingPathExtension().lastPathComponent)-\(suffix).\(destination.pathExtension)"
+            let target = suffix == 0 ? destination : destination.deletingLastPathComponent().appendingPathComponent(renamed)
+            for source in sources {
+                guard try FileSafety.identity(source.url) == source.identity else { throw FileformError(.inputChanged, "A source changed before publication.") }
+                try Self.rejectAlias(target, sourceIdentity: source.identity)
+                guard target.resolvingSymlinksInPath() != source.url.standardizedFileURL.resolvingSymlinksInPath() else { throw FileformError(.invalidRequest, "Destination aliases a source.") }
+            }
             let result = candidate.withUnsafeFileSystemRepresentation { source in
                 target.withUnsafeFileSystemRepresentation { target in renamex_np(source!, target!, UInt32(RENAME_EXCL)) }
             }

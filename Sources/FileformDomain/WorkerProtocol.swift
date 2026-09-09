@@ -41,8 +41,13 @@ public enum WorkerOperation: Codable, Equatable, Sendable {
     /// scratch file. It is never a final destination. Page indices are zero-based.
     case preview(asset: WorkerAssetHandle, outputDescriptor: Int32, maximumDimension: Int, pageIndex: Int?)
 
+    case pageRaster(asset: WorkerAssetHandle, outputDescriptor: Int32?, pageIndex: Int, clockwiseRotation: Int, dpi: Int, format: OutputFormat, quality: Double)
+
     fileprivate func validate() throws {
         switch self {
+        case .pageRaster(let asset, let output, let page, let rotation, let dpi, let format, let quality):
+            try asset.validate()
+            guard output.map({ $0 >= 3 && $0 != asset.descriptor }) ?? true, page >= 0, [0, 90, 180, 270].contains(rotation), (36...600).contains(dpi), [.png, .jpeg].contains(format), quality.isFinite, (0.05...1).contains(quality) else { throw WorkerProtocolError.invalidRequest }
         case .handshake: break
         case .inspect(let asset), .pdfFingerprint(let asset): try asset.validate()
         case .preview(let asset, let output, let dimension, let page):
@@ -167,7 +172,21 @@ public struct WorkerInspectionResult: Codable, Sendable {
     }
 }
 
+public struct WorkerRasterArtifact: Codable, Equatable, Sendable {
+    public let bytes: Int64?
+    public let width: Int
+    public let height: Int
+    public let format: OutputFormat
+    public init(bytes: Int64?, width: Int, height: Int, format: OutputFormat) {
+        self.bytes = bytes; self.width = width; self.height = height; self.format = format
+    }
+    fileprivate func validate() throws {
+        guard (1...16384).contains(width), (1...16384).contains(height), width * height <= 64_000_000, [.png, .jpeg].contains(format), bytes.map({ $0 > 0 && $0 <= 512 * 1024 * 1024 }) ?? true else { throw WorkerProtocolError.invalidRequest }
+    }
+}
+
 public enum WorkerResponsePayload: Codable, Sendable {
+    case pageRaster(WorkerRasterArtifact)
     case handshake(protocolVersion: Int)
     case inspection(WorkerInspectionResult)
     case preview(WorkerPreviewArtifact)
@@ -178,6 +197,7 @@ public enum WorkerResponsePayload: Codable, Sendable {
         switch self {
         case .handshake(let version):
             guard version == WorkerProtocol.version else { throw WorkerProtocolError.unsupportedVersion(version) }
+        case .pageRaster(let artifact): try artifact.validate()
         case .preview(let artifact): try artifact.validate()
         case .inspection(let result):
             try WorkerAssetHandle(assetID: result.assetID, descriptor: 3).validate()

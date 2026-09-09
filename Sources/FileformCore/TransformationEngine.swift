@@ -32,6 +32,8 @@ public extension ConversionEngine {
     func plan(_ request: TransformationRequest) async throws -> TransformationPlan {
         try request.validate()
         switch request.operation {
+        case .pdfRasterize:
+            return try await PDFRasterBackend(worker: nativeWorker()).plan(request)
         case .fetch:
             return try await DirectFetchBackend(media: mediaBackend()).plan(request)
         case .mediaTrim:
@@ -65,6 +67,13 @@ public extension ConversionEngine {
         guard plan.schemaVersion == 1 else { throw FileformError(.invalidRequest, "Unsupported transformation plan version.") }
         try plan.request.validate()
         switch plan.request.operation {
+        case .pdfRasterize:
+            try await gate.acquire()
+            do {
+                let result = try await PDFRasterBackend(worker: nativeWorker()).execute(plan, progress: progress)
+                await gate.release()
+                return result
+            } catch { await gate.release(); throw error }
         case .fetch:
             try await gate.acquire()
             do {

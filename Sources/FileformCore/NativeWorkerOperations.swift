@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import Foundation
+import AppKit
 import Darwin
 import CoreGraphics
 import ImageIO
@@ -30,11 +31,12 @@ public enum NativeWorkerOperations {
     private static func perform(_ operation: WorkerOperation) throws -> WorkerResponsePayload {
         let asset: WorkerAssetHandle
         switch operation {
-        case .inspect(let value), .pdfFingerprint(let value), .preview(let value, _, _, _): asset = value
+        case .inspect(let value), .pdfFingerprint(let value), .preview(let value, _, _, _), .pageRaster(let value, _, _, _, _, _, _): asset = value
         case .handshake: throw WorkerProtocolError.invalidRequest
         }
         let before = try sourceIdentity(asset.descriptor)
         if case .preview(_, let descriptor, _, _) = operation { try validateOutput(descriptor, source: before) }
+        if case .pageRaster(_, let descriptor?, _, _, _, _, _) = operation { try validateOutput(descriptor, source: before) }
         let scratchRoot = ProcessInfo.processInfo.environment["TMPDIR"].map { URL(fileURLWithPath: $0, isDirectory: true) } ?? FileManager.default.temporaryDirectory
         let directory = scratchRoot.appendingPathComponent("fileform-worker-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
@@ -47,6 +49,65 @@ public enum NativeWorkerOperations {
         else { throw FileformError(.unsupported, "Unsupported native input.") }
         guard try sourceIdentity(asset.descriptor) == before else { throw FileformError(.inputChanged, "Source changed.") }
         switch operation {
+        case .pageRaster(_, let descriptor, let pageIndex, let rotation, let dpi, let format, let quality):
+            let page: PDFPage
+            // Images follow PDF composition's one-point-per-oriented-pixel page convention.
+            if inspection.family == .pdf {
+                let document = try DocumentBackend.document(input)
+                guard let selected = document.page(at: pageIndex), let copied = selected.copy() as? PDFPage else { throw FileformError(.invalidRequest, "Selected page is missing.") }
+                page = copied
+            } else {
+                guard pageIndex == 0, inspection.frameCount == 1, inspection.warnings.isEmpty else { throw FileformError(.unsupported, "Page export requires PDF pages or SDR still images.") }
+                let rendered = try ImageBackend.render(inspection, options: .init(), format: .png)
+                guard let imagePage = PDFPage(image: NSImage(cgImage: rendered, size: NSSize(width: rendered.width, height: rendered.height))) else { throw FileformError(.engineFailed, "Could not prepare image page.") }
+                imagePage.setBounds(CGRect(x: 0, y: 0, width: rendered.width, height: rendered.height), for: .mediaBox)
+                page = imagePage
+            }
+            guard page.rotation % 90 == 0 else { throw FileformError(.unsupported, "Unsupported page rotation.") }
+            let totalRotation = ((page.rotation % 360) + 360 + rotation) % 360
+            let bounds = page.bounds(for: .cropBox)
+            guard bounds.minX.isFinite, bounds.minY.isFinite, bounds.width.isFinite, bounds.height.isFinite, bounds.width > 0, bounds.height > 0 else { throw FileformError(.unsupported, "Invalid page bounds.") }
+            let sideways = totalRotation == 90 || totalRotation == 270
+            let pixelWidth = ceil((sideways ? bounds.height : bounds.width) * Double(dpi) / 72)
+            let pixelHeight = ceil((sideways ? bounds.width : bounds.height) * Double(dpi) / 72)
+            guard pixelWidth <= 16384, pixelHeight <= 16384, pixelWidth * pixelHeight <= 64_000_000 else { throw FileformError(.resourceLimit, "Requested DPI exceeds page raster limits.") }
+            let width = max(1, Int(pixelWidth)), height = max(1, Int(pixelHeight))
+            guard let descriptor else { return .pageRaster(.init(bytes: nil, width: width, height: height, format: format)) }
+            guard let pageRef = page.pageRef, let color = CGColorSpace(name: CGColorSpace.sRGB),
+                  let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4, space: color, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw FileformError(.resourceLimit, "Page raster allocation failed.") }
+            context.setFillColor(CGColor(gray: 1, alpha: 1))
+            context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+            // CoreGraphics' drawing transform does not upscale small PDF pages.
+            // Apply the explicit DPI scale ourselves, then map the cropped,
+            // rotated page into its natural point-sized rectangle.
+            let pointWidth = sideways ? bounds.height : bounds.width
+            let pointHeight = sideways ? bounds.width : bounds.height
+            context.scaleBy(x: CGFloat(width) / pointWidth, y: CGFloat(height) / pointHeight)
+            context.concatenate(pageRef.getDrawingTransform(.cropBox, rect: CGRect(x: 0, y: 0, width: pointWidth, height: pointHeight), rotate: Int32(rotation), preserveAspectRatio: true))
+            context.drawPDFPage(pageRef)
+            // PDFAnnotation's SDK contract draws relative to the chosen box's
+            // origin; our PDF transform already expects absolute page space.
+            // Restore that origin once, then flatten screen-visible appearances.
+            context.saveGState()
+            context.translateBy(x: bounds.minX, y: bounds.minY)
+            // PDFKit also consults the owning page rotation when drawing some
+            // appearance streams. The CG transform has applied that already.
+            // Neutralize only this in-memory copy to avoid rotating twice.
+            page.rotation = 0
+            for annotation in page.annotations where annotation.shouldDisplay {
+                try Task.checkCancellation()
+                annotation.draw(with: .cropBox, in: context)
+            }
+            context.restoreGState()
+            guard let image = context.makeImage() else { throw FileformError(.engineFailed, "Page rendering failed.") }
+            let encoded = directory.appendingPathComponent("page." + format.fileExtension)
+            try ImageBackend.encode(image, format: format, quality: quality, destination: encoded, dpi: dpi)
+            let bytes = try ImageBackend.verify(encoded, format: format, rendered: image, preserveAlpha: false)
+            guard bytes <= maximumInputBytes, try sourceIdentity(asset.descriptor) == before else { throw FileformError(.inputChanged, "Source changed or output exceeded limits.") }
+            try validateOutput(descriptor, source: before)
+            try writePreview(encoded, to: descriptor, expectedBytes: bytes)
+            guard try sourceIdentity(asset.descriptor) == before else { _ = ftruncate(descriptor, 0); throw FileformError(.inputChanged, "Source changed.") }
+            return .pageRaster(.init(bytes: bytes, width: width, height: height, format: format))
         case .pdfFingerprint:
             return .pdfFingerprint(try PDFStructuralFingerprint.compute(input))
         case .inspect:

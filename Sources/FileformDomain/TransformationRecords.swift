@@ -23,8 +23,9 @@ public struct CommittedArtifact: Codable, Sendable {
     public let format: OutputFormat
     public let bytes: Int64
     public let sourceIDs: [String]
-    public init(url: URL, format: OutputFormat, bytes: Int64, sourceIDs: [String]) {
-        self.url = url; self.format = format; self.bytes = bytes; self.sourceIDs = sourceIDs
+    public let sourcePages: [PageReference]?
+    public init(url: URL, format: OutputFormat, bytes: Int64, sourceIDs: [String], sourcePages: [PageReference]? = nil) {
+        self.url = url; self.format = format; self.bytes = bytes; self.sourceIDs = sourceIDs; self.sourcePages = sourcePages
     }
 }
 public struct TransformationResult: Codable, Sendable {
