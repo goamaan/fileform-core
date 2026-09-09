@@ -47,9 +47,9 @@ private struct HostileWorkerFixture {
         for pid in pids where (try? processIsLive(pid)) == true { kill(pid, SIGKILL) }
     }
     func waitForStartup() async throws {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
         while pids.count < 2 && ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
-        #expect(pids.count >= 2, "The controlled worker must launch before cancellation is tested.")
+        try #require(pids.count >= 2, "The controlled worker must launch before cancellation is tested.")
     }
     func assertStoppedAndCleaned() async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(1))
@@ -136,14 +136,21 @@ private func processIsLive(_ pid: pid_t) throws -> Bool {
     #expect(try Data(contentsOf: input) == before)
 }
 
-@Test func nativeWorkerClientCancellationStopsWholeGroupAndCleansScratch() async throws {
+@Test(arguments: [0, 3]) func nativeWorkerClientCancellationStopsWholeGroupAndCleansScratch(startupDelaySeconds: Int) async throws {
     let fixture = try Fixture(); defer { fixture.cleanup() }
     let input = try fixture.image()
     let hostile = try HostileWorkerFixture(in: fixture, behavior: "wait")
     defer { hostile.cleanupProcesses() }
-    let client = NativeWorkerClient(executable: hostile.executable, timeout: 2)
-    let task = Task { try await client.inspect(input) }
-    try await hostile.waitForStartup()
+    let client = NativeWorkerClient(executable: hostile.executable, timeout: 30)
+    let task = Task {
+        if startupDelaySeconds > 0 { try await Task.sleep(for: .seconds(startupDelaySeconds)) }
+        return try await client.inspect(input)
+    }
+    // Queue/launch latency is separate from the cancellation guarantee. A
+    // delayed start must still exercise a live process group, not cancel a
+    // task which never reached the worker. Keep a bounded startup deadline.
+    do { try await hostile.waitForStartup() }
+    catch { task.cancel(); _ = await task.result; throw error }
     let start = ContinuousClock.now
     task.cancel()
     await #expect(throws: CancellationError.self) { try await task.value }

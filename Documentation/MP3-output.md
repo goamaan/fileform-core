@@ -21,7 +21,7 @@ header records encoder delay and padding for gapless-aware decoders.
 
 Verification checks the MP3 container and codec, channel count, sample rate,
 full duration and full decode before exclusive publication. `MP3Tests` also uses
-Apple's independent `afconvert` decoder. MP3 trim remains unsupported: existing
+Apple's independent `afconvert` decoder. Trimming directly to MP3 remains unsupported: existing
 frame/sample trim guarantees have not been extended to its encoder padding.
 Joining, implicit channel selection and general stream preservation are also
 outside this route.

@@ -115,7 +115,9 @@ with tempfile.TemporaryDirectory(prefix='fileform-trim-smoke-') as directory:
     assert audio_only['mediaTrim']['audioStreamIndex'] == 1
     inventory = run('capabilities', '--input', video, '--inventory')
     assert any(route['operationID'] == 'media.trim' and route['available'] for route in inventory['routes'])
-    assert all(route['outputFormat'] != 'mp3' for route in inventory['routes'])
+    assert all(route['outputFormat'] != 'mp3' for route in inventory['routes'] if route['operationID'] == 'media.trim')
+    mp3_enabled = 'libmp3lame' in json.loads((pack / 'manifest.json').read_text()).get('audioEncoders', [])
+    assert any(route['operationID'] == 'file.convert' and route['outputFormat'] == 'mp3' and route['available'] for route in inventory['routes']) == mp3_enabled
     timeline = run('media', 'inspect', source, '--json')
     assert seconds(timeline['duration']) == 6 and timeline['audioTracks'][0]['decodedSamples'] == 288000
     waveform = run('media', 'waveform', source, '--bins', '32', '--json')
