@@ -37,7 +37,9 @@ jobs:
       - name: Build pinned local-only media pack
         run: Tools/build-media-pack.sh
       - name: Test image, document, table and media contracts
-        run: swift test
+        # Unrelated codec tests must not contend with wall-clock worker teardown checks.
+        # Tests that verify concurrency create their own explicit concurrent work.
+        run: swift test --no-parallel
       - name: Verify CLI end to end
         run: |
           Tools/smoke-cli.sh
