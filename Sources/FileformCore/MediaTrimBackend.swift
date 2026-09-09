@@ -104,7 +104,7 @@ struct MediaTrimBackend {
     private func resolve(_ request: TransformationRequest, inspection: Inspection) async throws -> Resolved {
         try Task.checkCancellation()
         try request.validate()
-        guard case .mediaTrim(let requested, let mode, let audioOrdinal) = request.operation,
+        guard case .mediaTrim(let requested, let mode, let audioOrdinal, let muteAudio) = request.operation,
               inspection.family == .media, request.assets.count == 1,
               inspection.input == request.assets[0].url.standardizedFileURL else {
             throw FileformError(.invalidRequest, "Trimming requires one inspected recording.")
@@ -128,7 +128,8 @@ struct MediaTrimBackend {
             try validateVideo(source.videos[0], mode: mode)
         } else { video = nil }
         let audio: MediaBackend.Probe.Stream?
-        if let ordinal = audioOrdinal {
+        if muteAudio { audio = nil }
+        else if let ordinal = audioOrdinal {
             guard source.audios.indices.contains(ordinal) else { throw FileformError(.invalidRequest, "The selected audio-stream ordinal does not exist.") }
             audio = source.audios[ordinal]
         } else {
@@ -261,6 +262,7 @@ struct MediaTrimBackend {
                                        videoStreamIndex: video?.index, audioStreamIndex: audio?.index,
                                        copiedStreams: mode == .copy, durationTolerance: tolerance)
         var warnings = ["Descriptive metadata, chapters, cover artwork and unselected audio tracks are removed."]
+        if muteAudio { warnings.append("Audio is explicitly muted. All source audio tracks are omitted from this video output.") }
         if mode == .copy {
             warnings.append("Fast trim copies encoded packets. The measured range snaps outward to eligible keyframe or audio-packet boundaries.")
             if audio != nil { warnings.append("Compressed audio may overlap the selected edges by one packet; measured output duration and tolerance are reported.") }
@@ -371,6 +373,7 @@ struct MediaTrimBackend {
         }
         if let video = details.videoStreamIndex { args += ["-map", "0:\(video)"] }
         if let audio = details.audioStreamIndex { args += ["-map", "0:\(audio)"] }
+        else { args += ["-an"] }
         if details.mode == .copy {
             args += ["-t", Self.decimal(duration), "-c", "copy", "-copytb", "1", "-avoid_negative_ts", "disabled"]
         } else {

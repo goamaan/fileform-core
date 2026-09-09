@@ -55,6 +55,24 @@ container duration. This is not a sample-exact AAC cut, and the output may be
 slightly longer than the snapped picture interval. Exact mode is available when
 re-encoding to tighter boundaries is preferable.
 
+## Explicit mute
+
+Use `fileform media trim recording.mp4 --to mp4 --start 1 --end 3 --mute --output silent.mp4`
+to omit every audio track intentionally. Muting works with exact and eligible copy
+video trims, including inputs with several audio tracks. Plans declare the audio
+removal and output verification requires zero audio streams. `--mute` rejects
+audio-only outputs and cannot be combined with `--audio-stream`.
+
+The Swift operation uses `muteAudio: true`; portable JSON writes the distinct
+`mediaTrimMuted` tag so older clients reject this work instead of accidentally
+keeping sound. Unmuted work retains the original `mediaTrim` v1 payload exactly.
+A `muteAudio: true` field under the legacy tag is rejected. Existing v1 records
+decode as unmuted: an absent audio-stream selection still means choose
+the only available track automatically, or ask for an explicit selection if there
+are several. Muting does not bypass the picture timestamp, codec or fidelity
+constraints. It intentionally avoids validating discarded audio as part of the
+output timeline.
+
 ## Contracts and limits
 
 `TransformationOperation.mediaTrim` works through `ConversionEngine`,

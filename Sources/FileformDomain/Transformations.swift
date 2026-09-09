@@ -82,10 +82,72 @@ public enum TransformationOperation: Codable, Equatable, Sendable {
     case pdfComposition(pages: [PageReference])
     /// Each nonempty group is one output PDF; duplicates and order are intentional.
     case pdfSplit(groups: [[PageReference]])
-    case mediaTrim(interval: MediaInterval, mode: TrimMode, audioStream: Int?)
+    case mediaTrim(interval: MediaInterval, mode: TrimMode, audioStream: Int?, muteAudio: Bool = false)
     case imageCrop(rectangle: PixelCrop, conversion: ConversionParameters)
     /// Explicit invocation authorizes this bounded source request; never local uploads.
     case fetch(url: URL, maximumBytes: Int64)
+
+    // Decode existing v1 records without a mute field as automatic audio
+    // selection. Never reinterpret nil audioStream as permission to drop audio.
+    private enum OperationKey: String, CodingKey { case conversion, pdfComposition, pdfSplit, mediaTrim, mediaTrimMuted, imageCrop, fetch }
+    private enum ParameterKey: String, CodingKey { case _0, pages, groups, interval, mode, audioStream, muteAudio, rectangle, conversion, url, maximumBytes }
+    public init(from decoder: Decoder) throws {
+        let root = try decoder.container(keyedBy: OperationKey.self)
+        guard root.allKeys.count == 1, let key = root.allKeys.first else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Expected one known transformation operation."))
+        }
+        let value = try root.nestedContainer(keyedBy: ParameterKey.self, forKey: key)
+        switch key {
+        case .conversion: self = .conversion(try value.decode(ConversionParameters.self, forKey: ._0))
+        case .pdfComposition: self = .pdfComposition(pages: try value.decode([PageReference].self, forKey: .pages))
+        case .pdfSplit: self = .pdfSplit(groups: try value.decode([[PageReference]].self, forKey: .groups))
+        case .mediaTrim, .mediaTrimMuted:
+            let explicitMute = value.contains(.muteAudio) ? try value.decode(Bool.self, forKey: .muteAudio) : nil
+            let muted = key == .mediaTrimMuted
+            guard explicitMute == nil || explicitMute == muted else {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Mute policy conflicts with its wire operation tag."))
+            }
+            self = .mediaTrim(interval: try value.decode(MediaInterval.self, forKey: .interval),
+                              mode: try value.decode(TrimMode.self, forKey: .mode),
+                              audioStream: try value.decodeIfPresent(Int.self, forKey: .audioStream),
+                              muteAudio: muted)
+        case .imageCrop:
+            self = .imageCrop(rectangle: try value.decode(PixelCrop.self, forKey: .rectangle),
+                              conversion: try value.decode(ConversionParameters.self, forKey: .conversion))
+        case .fetch:
+            self = .fetch(url: try value.decode(URL.self, forKey: .url), maximumBytes: try value.decode(Int64.self, forKey: .maximumBytes))
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var root = encoder.container(keyedBy: OperationKey.self)
+        switch self {
+        case .conversion(let conversion):
+            var value = root.nestedContainer(keyedBy: ParameterKey.self, forKey: .conversion)
+            try value.encode(conversion, forKey: ._0)
+        case .pdfComposition(let pages):
+            var value = root.nestedContainer(keyedBy: ParameterKey.self, forKey: .pdfComposition)
+            try value.encode(pages, forKey: .pages)
+        case .pdfSplit(let groups):
+            var value = root.nestedContainer(keyedBy: ParameterKey.self, forKey: .pdfSplit)
+            try value.encode(groups, forKey: .groups)
+        case .mediaTrim(let interval, let mode, let audio, let muted):
+            // Older v1 clients must reject muted work rather than silently
+            // retaining audio by ignoring an unknown Boolean field.
+            var value = root.nestedContainer(keyedBy: ParameterKey.self, forKey: muted ? .mediaTrimMuted : .mediaTrim)
+            try value.encode(interval, forKey: .interval)
+            try value.encode(mode, forKey: .mode)
+            try value.encodeIfPresent(audio, forKey: .audioStream)
+        case .imageCrop(let rectangle, let conversion):
+            var value = root.nestedContainer(keyedBy: ParameterKey.self, forKey: .imageCrop)
+            try value.encode(rectangle, forKey: .rectangle)
+            try value.encode(conversion, forKey: .conversion)
+        case .fetch(let url, let bytes):
+            var value = root.nestedContainer(keyedBy: ParameterKey.self, forKey: .fetch)
+            try value.encode(url, forKey: .url)
+            try value.encode(bytes, forKey: .maximumBytes)
+        }
+    }
 
     public var id: OperationID {
         switch self {
@@ -139,10 +201,11 @@ public struct TransformationRequest: Codable, Sendable {
                 throw FileformError(.invalidRequest, "Choose between 1 and 10000 split groups, with at most 100000 pages.")
             }
             for pages in groups { try validatePages(pages) }
-        case .mediaTrim(let interval, _, let audioStream):
+        case .mediaTrim(let interval, _, let audioStream, let muteAudio):
             try singleAsset(); try interval.validate()
-            guard output.format.family == .media, audioStream.map({ $0 >= 0 }) ?? true else {
-                throw FileformError(.invalidRequest, "Trim requires a media output and a nonnegative stream index.")
+            guard output.format.family == .media, audioStream.map({ $0 >= 0 }) ?? true,
+                  !muteAudio || ([.mp4, .mov].contains(output.format) && audioStream == nil) else {
+                throw FileformError(.invalidRequest, "Trim requires a media output and a nonnegative stream index. Muting requires video output and cannot select an audio stream.")
             }
         case .fetch(let url, let maximumBytes):
             guard assets.isEmpty, ["https", "http"].contains(url.scheme?.lowercased() ?? ""),

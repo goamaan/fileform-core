@@ -19,6 +19,7 @@ struct MediaTrim: AsyncParsableCommand {
     @Option(help: "Exclusive source end: decimal seconds or ticks/timescale.") var end: String
     @Option(help: "exact selects frame/sample boundaries; copy snaps outward to eligible keyframe/packet boundaries.") var mode: TrimMode = .exact
     @Option(help: "Zero-based ordinal among source audio streams; required when there are multiple audio tracks.") var audioStream: Int?
+    @Flag(help: "Explicitly omit all audio from a video output; cannot combine with --audio-stream.") var mute = false
     @Option(help: "New output path; defaults to <name>-trimmed.<extension>.") var output: String?
     @Option(help: "Collision policy: fail or rename. Source aliases are rejected.") var collision: CollisionPolicy = .fail
     @Option(help: "Verified media engine pack directory; FILEFORM_MEDIA_PACK is also accepted.") var mediaPack: String?
@@ -32,7 +33,7 @@ struct MediaTrim: AsyncParsableCommand {
                 .appendingPathComponent("\(input.deletingPathExtension().lastPathComponent)-trimmed.\(format.fileExtension)")
             let interval = MediaInterval(start: try Self.time(start), end: try Self.time(end))
             let request = try TransformationRequest(assets: [.init(id: "source", url: input)],
-                operation: .mediaTrim(interval: interval, mode: mode, audioStream: audioStream),
+                operation: .mediaTrim(interval: interval, mode: mode, audioStream: audioStream, muteAudio: mute),
                 output: .init(destination: destination, format: format), collisionPolicy: collision)
             let engine = makeEngine(mediaPack), dryRun = dryRun
             try await cancellable {
