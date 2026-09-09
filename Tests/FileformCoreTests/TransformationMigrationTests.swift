@@ -26,8 +26,10 @@ private func migratedRequest(_ input: URL, output: URL) throws -> Transformation
     #expect(second.status == .succeeded && second.operationID == .conversion)
     let artifact = try #require(second.artifacts.first)
     #expect(second.artifacts.count == 1 && artifact.sourceIDs == ["source"])
-    #expect(artifact.bytes == Int64(try Data(contentsOf: artifact.url).count))
-    #expect(try Data(contentsOf: #require(first.output)) == Data(contentsOf: artifact.url))
+    let actualBytes = Int64(try Data(contentsOf: artifact.url).count)
+    #expect(artifact.bytes == actualBytes)
+    let legacyOutput = try #require(first.output)
+    #expect(try Data(contentsOf: legacyOutput) == Data(contentsOf: artifact.url))
     #expect(try Data(contentsOf: input) == original)
 }
 

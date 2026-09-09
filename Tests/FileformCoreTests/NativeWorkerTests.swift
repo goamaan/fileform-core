@@ -38,7 +38,8 @@ import FileformDomain
     let response = try NativeWorkerOperations.execute(request)
     guard case .preview(let artifact) = response.payload else { Issue.record("Expected preview"); return }
     #expect(artifact.width == 60 && artifact.height == 40)
-    #expect(artifact.bytes == Int64(try Data(contentsOf: outputURL).count))
+    let actualBytes = Int64(try Data(contentsOf: outputURL).count)
+    #expect(artifact.bytes == actualBytes)
     let imageSource = try #require(CGImageSourceCreateWithURL(outputURL as CFURL, nil))
     #expect(CGImageSourceGetType(imageSource) as String? == "public.png")
     let image = try #require(CGImageSourceCreateImageAtIndex(imageSource, 0, nil))

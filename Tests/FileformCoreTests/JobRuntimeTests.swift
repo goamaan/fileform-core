@@ -31,7 +31,8 @@ private func expectEventContract(_ events: [TransformationEvent], jobID: UUID) t
     #expect(events.allSatisfy { $0.jobID == jobID })
     #expect(events.map(\.sequence) == (0..<events.count).map(UInt64.init))
     #expect(events.filter(isTerminal).count == 1)
-    #expect(isTerminal(try #require(events.last)))
+    let last = try #require(events.last)
+    #expect(isTerminal(last))
     guard case .queued = events.first?.payload else { Issue.record("First event must be queued"); return }
 }
 
@@ -95,7 +96,8 @@ private func expectEventContract(_ events: [TransformationEvent], jobID: UUID) t
         let artifact = try #require(result.artifacts.first)
         #expect(artifact.url == destination)
         #expect(FileManager.default.fileExists(atPath: artifact.url.path))
-        #expect(Int64(try Data(contentsOf: artifact.url).count) == artifact.bytes)
+        let actualBytes = Int64(try Data(contentsOf: artifact.url).count)
+        #expect(actualBytes == artifact.bytes)
     default: Issue.record("Cancellation must end in a terminal event")
     }
     #expect(try Data(contentsOf: input) == original)
