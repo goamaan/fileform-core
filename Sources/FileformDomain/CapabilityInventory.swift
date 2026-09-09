@@ -27,9 +27,10 @@ public struct OperationCapability: Codable, Sendable, Identifiable {
     public let localProcessing: Bool
     public let limitation: String?
     public let verification: String
-    public init(id: String, inputFamilies: [FileFamily], capability: Capability, backendVersion: String?, verification: String) {
-        self.id = id; operationID = .conversion; self.inputFamilies = inputFamilies
-        outputFormat = capability.format; goals = capability.goals; cardinality = .file
+    public init(id: String, inputFamilies: [FileFamily], capability: Capability, backendVersion: String?, verification: String,
+                operationID: OperationID = .conversion, cardinality: OutputCardinality = .file) {
+        self.id = id; self.operationID = operationID; self.inputFamilies = inputFamilies
+        outputFormat = capability.format; goals = capability.goals; self.cardinality = cardinality
         backend = capability.engine; self.backendVersion = backendVersion; available = capability.available
         localProcessing = true; limitation = capability.limitation; self.verification = verification
     }

@@ -110,10 +110,11 @@ private func expectEventContract(_ events: [TransformationEvent], jobID: UUID) t
 private func expectInventoryMatchesLegacy(_ inventory: CapabilityInventory, legacy: [Capability]) throws {
     #expect(inventory.schemaVersion == 1)
     #expect(!inventory.engineVersion.isEmpty && !inventory.platformVersion.isEmpty)
-    #expect(inventory.routes.count == legacy.count)
+    let conversions = inventory.routes.filter { $0.operationID == .conversion }
+    #expect(conversions.count == legacy.count)
     #expect(Set(inventory.routes.map(\.id)).count == inventory.routes.count)
-    #expect(inventory.routes.allSatisfy { $0.operationID == .conversion && $0.outputFormat != .mp3 })
-    for (route, previous) in zip(inventory.routes, legacy) {
+    #expect(inventory.routes.allSatisfy { $0.outputFormat != .mp3 && ![OperationID.fetch, .mediaTrim].contains($0.operationID) })
+    for (route, previous) in zip(conversions, legacy) {
         #expect(route.outputFormat == previous.format)
         #expect(route.goals == previous.goals)
         #expect(route.backend == previous.engine)

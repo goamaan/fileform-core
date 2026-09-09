@@ -7,7 +7,7 @@ import FileformDomain
 public actor ConversionEngine {
     private let mediaPackURL: URL?
     private var loadedMedia: MediaBackend?
-    private let gate = JobGate()
+    let gate = JobGate() // Shared by operation-specific execution extensions.
     public init(mediaPack: URL? = nil) { self.mediaPackURL = mediaPack }
 
     private func mediaBackend() throws -> MediaBackend {
@@ -60,7 +60,7 @@ public actor ConversionEngine {
     public func capabilityInventory(for inspection: Inspection? = nil) -> CapabilityInventory {
         let os = ProcessInfo.processInfo.operatingSystemVersionString
         let mediaVersion = try? mediaBackend().pack.version
-        let routes = capabilities(for: inspection).map { capability in
+        var routes = capabilities(for: inspection).map { capability in
             let families: [FileFamily]
             let verification: String
             switch capability.engine {
@@ -73,6 +73,21 @@ public actor ConversionEngine {
             return OperationCapability(id: "file.convert:\(capability.engine):\(capability.format.rawValue)",
                 inputFamilies: families, capability: capability,
                 backendVersion: capability.engine == "ffmpeg" ? mediaVersion : os, verification: verification)
+        }
+        if inspection == nil || inspection?.family == .image {
+            for capability in ImageBackend.capabilities() {
+                routes.append(.init(id: "image.crop:imageio:\(capability.format.rawValue)", inputFamilies: [.image], capability: capability,
+                                    backendVersion: os, verification: "Oriented crop pixels, dimensions, alpha and exact byte constraints.", operationID: .imageCrop))
+            }
+        }
+        if inspection == nil || [.image, .pdf].contains(inspection!.family) {
+            for (operation, cardinality) in [(OperationID.pdfComposition, OutputCardinality.file), (.pdfSplit, .directory)] {
+                let capability = Capability(format: .pdf, goals: [.convert], engine: "pdf-composition", available: true,
+                    limitation: "Up to 128 sources and 1000 output pages; document-level metadata, forms, outlines and signatures have declared losses.")
+                routes.append(.init(id: operation.rawValue + ":pdfkit:pdf", inputFamilies: [.image, .pdf], capability: capability,
+                    backendVersion: os, verification: "Reopen every PDF; compare page count, order, text, boxes and rotation before atomic publication.",
+                    operationID: operation, cardinality: cardinality))
+            }
         }
         return .init(engineVersion: "0.1.0-dev", platformVersion: os, inputFamily: inspection?.family, routes: routes)
     }

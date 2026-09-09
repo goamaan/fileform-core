@@ -69,13 +69,9 @@ private func migratedRequest(_ input: URL, output: URL) throws -> Transformation
     let input = try fixture.image()
     let before = try Data(contentsOf: input)
     let asset = AssetReference(id: "source", url: input)
-    let page = PageReference(sourceID: "source", pageIndex: 0)
     let interval = MediaInterval(start: .init(ticks: 0, timescale: 1), end: .init(ticks: 1, timescale: 1))
     let operations: [(TransformationOperation, OutputFormat, [AssetReference])] = [
-        (.pdfComposition(pages: [page]), .pdf, [asset]),
-        (.pdfSplit(groups: [[page]]), .pdf, [asset]),
         (.mediaTrim(interval: interval, mode: .exact, audioStream: nil), .mp4, [asset]),
-        (.imageCrop(rectangle: .init(x: 0, y: 0, width: 2, height: 2), conversion: .init()), .png, [asset]),
         (.fetch(url: URL(string: "https://example.com/media.mp4")!, maximumBytes: 100), .mp4, [])
     ]
     let destination = fixture.url("never-created")

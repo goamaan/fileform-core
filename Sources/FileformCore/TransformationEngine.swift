@@ -24,6 +24,26 @@ public extension TransformationRequest {
 
 public extension ConversionEngine {
     func plan(_ request: TransformationRequest) async throws -> TransformationPlan {
+        try request.validate()
+        switch request.operation {
+        case .imageCrop:
+            return try ImageTransformationBackend.plan(request: request, inspection: await inspect(request.assets[0].url))
+        case .pdfComposition, .pdfSplit:
+            guard request.assets.count <= 128 else { throw FileformError(.resourceLimit, "PDF composition accepts up to 128 source files.") }
+            var totalBytes: Int64 = 0
+            for asset in request.assets {
+                let bytes = try FileSafety.identity(asset.url).bytes
+                guard bytes <= 512 * 1024 * 1024 - totalBytes else { throw FileformError(.resourceLimit, "PDF composition accepts at most 512 MiB of source files.") }
+                totalBytes += bytes
+            }
+            var inputs: [InspectedAsset] = []
+            for asset in request.assets {
+                try Task.checkCancellation()
+                inputs.append(.init(id: asset.id, inspection: try await inspect(asset.url)))
+            }
+            return try PDFCompositionBackend.plan(request: request, inspections: inputs)
+        default: break
+        }
         let legacy = try request.legacyConversion()
         let plan = try await self.plan(legacy)
         try FileSafety.rejectSourceAliases(destination: request.output.destination, inputs: [plan.inspection])
@@ -32,6 +52,20 @@ public extension ConversionEngine {
     func run(_ plan: TransformationPlan,
              progress: @escaping @Sendable (ProgressEvent) -> Void = { _ in }) async throws -> TransformationResult {
         guard plan.schemaVersion == 1 else { throw FileformError(.invalidRequest, "Unsupported transformation plan version.") }
+        try plan.request.validate()
+        switch plan.request.operation {
+        case .imageCrop, .pdfComposition, .pdfSplit:
+            try await gate.acquire()
+            do {
+                let result: TransformationResult
+                if case .imageCrop = plan.request.operation {
+                    result = try ImageTransformationBackend.execute(plan: plan, progress: progress)
+                } else { result = try PDFCompositionBackend.execute(plan: plan, progress: progress) }
+                await gate.release()
+                return result
+            } catch { await gate.release(); throw error }
+        default: break
+        }
         let request = try plan.request.legacyConversion()
         guard plan.inputs.count == 1, plan.inputs[0].id == plan.request.assets[0].id,
               plan.inputs[0].inspection.input == request.input.standardizedFileURL else {
