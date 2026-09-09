@@ -12,7 +12,7 @@ extension AlphaBackground: ExpressibleByArgument {}
 struct FileformCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "fileform", abstract: "Convert files locally and verify the result.",
-        version: "0.1.0-dev", subcommands: [Inspect.self, Capabilities.self, Convert.self, Compress.self, Fit.self])
+        version: "0.1.0-dev", subcommands: [Inspect.self, Capabilities.self, Convert.self, Compress.self, Fit.self, Transform.self, Setup.self])
 }
 
 struct Inspect: AsyncParsableCommand {
@@ -34,6 +34,7 @@ struct Inspect: AsyncParsableCommand {
 }
 
 struct Capabilities: AsyncParsableCommand {
+    @Flag(help: "Emit the versioned operation inventory instead of the legacy list.") var inventory = false
     static let configuration = CommandConfiguration(abstract: "List implemented output capabilities.")
     @Option(help: "Restrict outputs to an inspected input file.") var input: String?
     @Flag(help: "Write a structured report to stdout.") var json = false
@@ -43,6 +44,7 @@ struct Capabilities: AsyncParsableCommand {
             let engine = makeEngine(mediaPack)
             let inspection: Inspection?
             if let input { inspection = try await engine.inspect(URL(fileURLWithPath: input)) } else { inspection = nil }
+            if inventory { try emit(await engine.capabilityInventory(for: inspection)); return }
             let values = await engine.capabilities(for: inspection)
             if json { try emit(values) }
             else { for value in values { print("\(value.format.title)\t\(value.available ? "available" : "unavailable")\t\(value.engine)") } }

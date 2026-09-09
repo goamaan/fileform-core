@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "assets": [
+    {
+      "id": "source",
+      "url": "file:///FILEFORM_FIXTURES/source.wav"
+    }
+  ],
+  "operation": {
+    "mediaTrim": {
+      "interval": {
+        "start": {
+          "ticks": 48000,
+          "timescale": 48000
+        },
+        "end": {
+          "ticks": 144000,
+          "timescale": 48000
+        }
+      },
+      "mode": "exact"
+    }
+  },
+  "output": {
+    "destination": "file:///FILEFORM_OUTPUTS/trim.wav",
+    "format": "wav",
+    "cardinality": "file"
+  },
+  "fidelity": "allowDeclaredLosses",
+  "collisionPolicy": "fail"
+}

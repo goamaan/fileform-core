@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "assets": [
+    {
+      "id": "source",
+      "url": "file:///FILEFORM_FIXTURES/source.png"
+    }
+  ],
+  "operation": {
+    "conversion": {
+      "_0": {
+        "goal": "convert",
+        "options": {
+          "quality": 0.82,
+          "minimumQuality": 0.35,
+          "minimumVideoBitrate": 150000
+        },
+        "color": "convertToSRGB",
+        "metadata": "removeDescriptive"
+      }
+    }
+  },
+  "output": {
+    "destination": "file:///FILEFORM_OUTPUTS/convert.png",
+    "format": "png",
+    "cardinality": "file"
+  },
+  "fidelity": "allowDeclaredLosses",
+  "collisionPolicy": "fail"
+}

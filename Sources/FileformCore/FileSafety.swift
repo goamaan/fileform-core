@@ -32,6 +32,8 @@ final class OutputTransaction {
     let destination: URL
     let collisionPolicy: CollisionPolicy
     private var cleaned = false
+    private let source: URL
+    private let sourceIdentity: FileIdentity
 
     init(destination: URL, input: URL, collisionPolicy: CollisionPolicy) throws {
         guard destination.isFileURL, !destination.lastPathComponent.isEmpty else {
@@ -42,6 +44,8 @@ final class OutputTransaction {
             throw FileformError(.invalidRequest, "The output must be different from the original.")
         }
         self.destination = final; self.collisionPolicy = collisionPolicy
+        self.source = input; self.sourceIdentity = try FileSafety.identity(input)
+        try Self.rejectAlias(final, sourceIdentity: sourceIdentity)
         let parent = final.deletingLastPathComponent()
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: parent.path, isDirectory: &isDirectory), isDirectory.boolValue else {
@@ -65,10 +69,14 @@ final class OutputTransaction {
         guard candidate.deletingLastPathComponent().standardizedFileURL == directory.standardizedFileURL else {
             throw FileformError(.invalidRequest, "Cannot finalize a file not owned by this job.")
         }
+        guard try FileSafety.identity(source) == sourceIdentity else {
+            throw FileformError(.inputChanged, "The source changed before output publication.")
+        }
         for suffix in 0..<1000 {
             try Task.checkCancellation()
             let target = suffix == 0 ? destination : destination.deletingLastPathComponent()
                 .appendingPathComponent("\(destination.deletingPathExtension().lastPathComponent)-\(suffix).\(destination.pathExtension)")
+            try Self.rejectAlias(target, sourceIdentity: sourceIdentity)
             let result = candidate.withUnsafeFileSystemRepresentation { source in
                 target.withUnsafeFileSystemRepresentation { target in renamex_np(source!, target!, UInt32(RENAME_EXCL)) }
             }
@@ -89,6 +97,13 @@ final class OutputTransaction {
         try? FileManager.default.removeItem(at: directory)
     }
     deinit { cleanup() }
+
+    private static func rejectAlias(_ target: URL, sourceIdentity: FileIdentity) throws {
+        if let existing = try? FileSafety.identity(target),
+           existing.device == sourceIdentity.device, existing.inode == sourceIdentity.inode {
+            throw FileformError(.invalidRequest, "The destination is an alias of the source file.")
+        }
+    }
 
     private static func exists(_ url: URL) -> Bool {
         var info = stat()

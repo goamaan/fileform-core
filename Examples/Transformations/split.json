@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "assets": [
+    {
+      "id": "source",
+      "url": "file:///FILEFORM_FIXTURES/source.pdf"
+    }
+  ],
+  "operation": {
+    "pdfSplit": {
+      "groups": [
+        [
+          {
+            "sourceID": "source",
+            "pageIndex": 0,
+            "clockwiseRotation": 0
+          }
+        ],
+        [
+          {
+            "sourceID": "source",
+            "pageIndex": 1,
+            "clockwiseRotation": 0
+          }
+        ]
+      ]
+    }
+  },
+  "output": {
+    "destination": "file:///FILEFORM_OUTPUTS/split",
+    "format": "pdf",
+    "cardinality": "directory"
+  },
+  "fidelity": "allowDeclaredLosses",
+  "collisionPolicy": "fail"
+}

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "assets": [],
+  "operation": {
+    "fetch": {
+      "url": "https://example.com/recording.mp4",
+      "maximumBytes": 10000000
+    }
+  },
+  "output": {
+    "destination": "file:///FILEFORM_OUTPUTS/fetch.mp4",
+    "format": "mp4",
+    "cardinality": "file"
+  },
+  "fidelity": "allowDeclaredLosses",
+  "collisionPolicy": "fail"
+}

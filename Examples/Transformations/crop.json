@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "assets": [
+    {
+      "id": "source",
+      "url": "file:///FILEFORM_FIXTURES/source.png"
+    }
+  ],
+  "operation": {
+    "imageCrop": {
+      "rectangle": {
+        "x": 10,
+        "y": 20,
+        "width": 100,
+        "height": 80
+      },
+      "conversion": {
+        "goal": "convert",
+        "options": {
+          "quality": 0.82,
+          "minimumQuality": 0.35,
+          "minimumVideoBitrate": 150000
+        },
+        "color": "convertToSRGB",
+        "metadata": "removeDescriptive"
+      }
+    }
+  },
+  "output": {
+    "destination": "file:///FILEFORM_OUTPUTS/crop.png",
+    "format": "png",
+    "cardinality": "file"
+  },
+  "fidelity": "allowDeclaredLosses",
+  "collisionPolicy": "fail"
+}

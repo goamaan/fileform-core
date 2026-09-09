@@ -57,9 +57,30 @@ public actor ConversionEngine {
         }
     }
 
+    public func capabilityInventory(for inspection: Inspection? = nil) -> CapabilityInventory {
+        let os = ProcessInfo.processInfo.operatingSystemVersionString
+        let mediaVersion = try? mediaBackend().pack.version
+        let routes = capabilities(for: inspection).map { capability in
+            let families: [FileFamily]
+            let verification: String
+            switch capability.engine {
+            case "imageio": families = [.image]; verification = "Reopen container, dimensions and alpha; check byte constraints."
+            case "ffmpeg": families = [.media]; verification = "Decode all streams; verify codecs, dimensions and duration."
+            case "tables": families = [.table]; verification = "Reparse and compare every record and cell."
+            default: families = inspection.map { [$0.family] } ?? ([OutputFormat.pdf, .txt].contains(capability.format) ? [.image, .pdf] : [.pdf])
+                verification = "Reopen page or text output; verify selected-page properties."
+            }
+            return OperationCapability(id: "file.convert:\(capability.engine):\(capability.format.rawValue)",
+                inputFamilies: families, capability: capability,
+                backendVersion: capability.engine == "ffmpeg" ? mediaVersion : os, verification: verification)
+        }
+        return .init(engineVersion: "0.1.0-dev", platformVersion: os, inputFamily: inspection?.family, routes: routes)
+    }
+
     public func plan(_ request: ConversionRequest) async throws -> ConversionPlan {
         try validateOptions(request)
         let inspection = try await inspect(request.input)
+        try FileSafety.rejectSourceAliases(destination: request.destination, inputs: [inspection])
         if request.options.pageNumber != nil && inspection.family != .pdf {
             throw FileformError(.invalidRequest, "Page selection is only available for PDF inputs.")
         }

@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "assets": [
+    {
+      "id": "source",
+      "url": "file:///FILEFORM_FIXTURES/source.pdf"
+    }
+  ],
+  "operation": {
+    "pdfComposition": {
+      "pages": [
+        {
+          "sourceID": "source",
+          "pageIndex": 0,
+          "clockwiseRotation": 0
+        },
+        {
+          "sourceID": "source",
+          "pageIndex": 2,
+          "clockwiseRotation": 0
+        },
+        {
+          "sourceID": "source",
+          "pageIndex": 0,
+          "clockwiseRotation": 0
+        }
+      ]
+    }
+  },
+  "output": {
+    "destination": "file:///FILEFORM_OUTPUTS/merge.pdf",
+    "format": "pdf",
+    "cardinality": "file"
+  },
+  "fidelity": "allowDeclaredLosses",
+  "collisionPolicy": "fail"
+}
