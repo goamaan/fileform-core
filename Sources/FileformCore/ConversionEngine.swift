@@ -10,7 +10,7 @@ public actor ConversionEngine {
     let gate = JobGate() // Shared by operation-specific execution extensions.
     public init(mediaPack: URL? = nil) { self.mediaPackURL = mediaPack }
 
-    private func mediaBackend() throws -> MediaBackend {
+    func mediaBackend() throws -> MediaBackend {
         if let loadedMedia { return loadedMedia }
         guard let mediaPackURL else { throw FileformError(.engineUnavailable, "Install the media engine pack to convert this recording.") }
         let media = MediaBackend(pack: try MediaPack(directory: mediaPackURL))
@@ -78,6 +78,15 @@ public actor ConversionEngine {
             for capability in ImageBackend.capabilities() {
                 routes.append(.init(id: "image.crop:imageio:\(capability.format.rawValue)", inputFamilies: [.image], capability: capability,
                                     backendVersion: os, verification: "Oriented crop pixels, dimensions, alpha and exact byte constraints.", operationID: .imageCrop))
+            }
+        }
+        if inspection == nil || inspection?.family == .media {
+            for format in MediaBackend.formats where inspection == nil ||
+                ([OutputFormat.mp4, .mov].contains(format) ? inspection?.videoCodec != nil : inspection?.audioCodec != nil) {
+                let capability = Capability(format: format, goals: [.convert], engine: "ffmpeg", available: mediaVersion != nil,
+                    limitation: "Exact frame/sample trim; eligible H.264/AAC MP4-family fast copy snaps outward. Constant-rate video, explicit audio selection, bounded packet inventory; MP3 unavailable.")
+                routes.append(.init(id: "media.trim:ffmpeg:\(format.rawValue)", inputFamilies: [.media], capability: capability,
+                    backendVersion: mediaVersion, verification: "Measured frame/sample boundaries, copied packet hashes, complete decode, stream and duration checks.", operationID: .mediaTrim))
             }
         }
         if inspection == nil || [.image, .pdf].contains(inspection!.family) {

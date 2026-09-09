@@ -26,6 +26,9 @@ public extension ConversionEngine {
     func plan(_ request: TransformationRequest) async throws -> TransformationPlan {
         try request.validate()
         switch request.operation {
+        case .mediaTrim:
+            let inspection = try await inspect(request.assets[0].url)
+            return try await MediaTrimBackend(media: mediaBackend()).plan(request, inspection: inspection)
         case .imageCrop:
             return try ImageTransformationBackend.plan(request: request, inspection: await inspect(request.assets[0].url))
         case .pdfComposition, .pdfSplit:
@@ -54,6 +57,13 @@ public extension ConversionEngine {
         guard plan.schemaVersion == 1 else { throw FileformError(.invalidRequest, "Unsupported transformation plan version.") }
         try plan.request.validate()
         switch plan.request.operation {
+        case .mediaTrim:
+            try await gate.acquire()
+            do {
+                let result = try await MediaTrimBackend(media: mediaBackend()).execute(plan, progress: progress)
+                await gate.release()
+                return result
+            } catch { await gate.release(); throw error }
         case .imageCrop, .pdfComposition, .pdfSplit:
             try await gate.acquire()
             do {

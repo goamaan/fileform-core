@@ -113,7 +113,7 @@ private func expectInventoryMatchesLegacy(_ inventory: CapabilityInventory, lega
     let conversions = inventory.routes.filter { $0.operationID == .conversion }
     #expect(conversions.count == legacy.count)
     #expect(Set(inventory.routes.map(\.id)).count == inventory.routes.count)
-    #expect(inventory.routes.allSatisfy { $0.outputFormat != .mp3 && ![OperationID.fetch, .mediaTrim].contains($0.operationID) })
+    #expect(inventory.routes.allSatisfy { $0.outputFormat != .mp3 && $0.operationID != .fetch })
     for (route, previous) in zip(conversions, legacy) {
         #expect(route.outputFormat == previous.format)
         #expect(route.goals == previous.goals)

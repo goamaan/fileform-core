@@ -35,6 +35,8 @@ fileform fit photo.png --to jpeg --max-bytes 500000 --minimum-quality 0.4
 fileform convert transparent.png --to jpeg --background white
 fileform convert recording.mkv --to mp4 --output ready.mp4
 fileform convert recording.mkv --to m4a --output audio.m4a
+fileform media trim recording.wav --to wav --start 1 --end 3 --output excerpt.wav --json
+fileform media trim recording.mp4 --to mp4 --start 1.35 --end 3.57 --mode copy --output excerpt.mp4 --dry-run --json
 fileform convert scan.png --to txt --output scan.txt
 fileform convert document.pdf --to png --page 2 --output page-2.png
 fileform convert table.csv --to json --output table.json

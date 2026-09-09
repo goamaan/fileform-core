@@ -11,8 +11,10 @@ public struct TransformationPlan: Codable, Sendable {
     public let request: TransformationRequest
     public let inputs: [InspectedAsset]
     public let warnings: [String]
-    public init(request: TransformationRequest, inputs: [InspectedAsset], warnings: [String]) {
+    public let mediaTrim: MediaTrimDetails?
+    public init(request: TransformationRequest, inputs: [InspectedAsset], warnings: [String], mediaTrim: MediaTrimDetails? = nil) {
         schemaVersion = 1; self.request = request; self.inputs = inputs; self.warnings = warnings
+        self.mediaTrim = mediaTrim
     }
 }
 public struct CommittedArtifact: Codable, Sendable {
@@ -31,9 +33,12 @@ public struct TransformationResult: Codable, Sendable {
     public let artifacts: [CommittedArtifact]
     public let warnings: [String]
     public let attempts: Int
-    public init(operationID: OperationID, status: ResultStatus, artifacts: [CommittedArtifact], warnings: [String], attempts: Int) {
+    public let mediaTrim: MediaTrimDetails?
+    public init(operationID: OperationID, status: ResultStatus, artifacts: [CommittedArtifact], warnings: [String], attempts: Int,
+                mediaTrim: MediaTrimDetails? = nil) {
         schemaVersion = 1; self.operationID = operationID; self.status = status
         self.artifacts = artifacts; self.warnings = warnings; self.attempts = attempts
+        self.mediaTrim = mediaTrim
     }
 }
 public enum TransformationEventPayload: Codable, Sendable {

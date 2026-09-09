@@ -7,8 +7,9 @@ collision policies. Unknown versions and invalid combinations fail explicitly.
 
 `Examples/Transformations` contains conversion, composition, split, crop, trim and
 link request shapes. Replace the `FILEFORM_FIXTURES` and `FILEFORM_OUTPUTS` paths
-before use. Conversion, oriented image crop, PDF composition and PDF split now execute.
-Media trim and link acquisition remain schema-only and fail closed.
+before use. Conversion, oriented image crop, PDF composition, PDF split and
+measured media trim now execute. Link acquisition remains schema-only and fails
+closed. See [media trimming](Media-trimming.md) for timing and stream limits.
 See Editing.md for current bounds and declared losses.
 
 Payload encoding is a single case key with named fields (or `_0` for a single

@@ -8,6 +8,7 @@ struct MediaBackend: Sendable {
 
     struct Probe: Decodable {
         struct Stream: Decodable {
+            let index: Int?
             let codec_type: String?
             let codec_name: String?
             let width: Int?
@@ -23,9 +24,16 @@ struct MediaBackend: Sendable {
             let sample_aspect_ratio: String?
             let disposition: [String: Int]?
             let side_data_list: [SideData]?
+            let time_base: String?
+            let start_pts: Int64?
+            let duration_ts: Int64?
+            let start_time: String?
+            let avg_frame_rate: String?
+            let r_frame_rate: String?
+            let has_b_frames: Int?
             struct SideData: Decodable { let rotation: Int? }
         }
-        struct Format: Decodable { let format_name: String?; let duration: String?; let bit_rate: String? }
+        struct Format: Decodable { let format_name: String?; let duration: String?; let bit_rate: String?; let start_time: String? }
         let streams: [Stream]
         let format: Format
         var videos: [Stream] { streams.filter { $0.codec_type == "video" && $0.disposition?["attached_pic"] != 1 } }

@@ -112,7 +112,9 @@ private func processIsLive(_ pid: pid_t) throws -> Bool {
     let input = try fixture.image()
     let hostile = try HostileWorkerFixture(in: fixture, behavior: "exit 0")
     defer { hostile.cleanupProcesses() }
-    let client = NativeWorkerClient(executable: hostile.executable, timeout: 1)
+    // This case measures leader-exit teardown, not interpreter startup speed.
+    // Leave startup headroom when the complete fixture suite runs in parallel.
+    let client = NativeWorkerClient(executable: hostile.executable, timeout: 4)
     let start = ContinuousClock.now
     await #expect(throws: FileformError.self) { try await client.inspect(input) }
     #expect(start.duration(to: .now) < .seconds(5))

@@ -43,6 +43,7 @@ jobs:
           Tools/smoke-cli.sh
           python3 Tools/smoke-transformations.py
           python3 Tools/smoke-editing.py
+          python3 Tools/smoke-media-trim.py
       - name: Build development CLI delivery archive
         run: Tools/package-cli.sh --with-media
       - name: Retain development CLI archive

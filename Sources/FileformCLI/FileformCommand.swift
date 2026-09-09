@@ -12,7 +12,7 @@ extension AlphaBackground: ExpressibleByArgument {}
 struct FileformCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "fileform", abstract: "Convert files locally and verify the result.",
-        version: "0.1.0-dev", subcommands: [Inspect.self, Capabilities.self, Convert.self, Compress.self, Fit.self, Transform.self, Setup.self, Preview.self, ImageCommand.self, PDFCommand.self])
+        version: "0.1.0-dev", subcommands: [Inspect.self, Capabilities.self, Convert.self, Compress.self, Fit.self, Transform.self, Setup.self, Preview.self, ImageCommand.self, PDFCommand.self, MediaCommand.self])
 }
 
 struct Inspect: AsyncParsableCommand {
