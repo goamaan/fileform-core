@@ -31,7 +31,7 @@ public enum NativeWorkerOperations {
     private static func perform(_ operation: WorkerOperation) throws -> WorkerResponsePayload {
         let asset: WorkerAssetHandle
         switch operation {
-        case .inspect(let value), .pdfFingerprint(let value), .preview(let value, _, _, _), .pageRaster(let value, _, _, _, _, _, _): asset = value
+        case .embeddedImage(let value, _, _, _, _, _, _), .inspect(let value), .pdfFingerprint(let value), .preview(let value, _, _, _), .pageRaster(let value, _, _, _, _, _, _): asset = value
         case .handshake: throw WorkerProtocolError.invalidRequest
         }
         let before = try sourceIdentity(asset.descriptor)
@@ -43,6 +43,16 @@ public enum NativeWorkerOperations {
         defer { try? FileManager.default.removeItem(at: directory) }
         let input = directory.appendingPathComponent("input")
         try copySource(asset.descriptor, identity: before, to: input)
+        if case .embeddedImage(_, let output, let width, let height, let channels, let alpha, let jpeg) = operation {
+            try validateOutput(output, source: before)
+            let encoded = directory.appendingPathComponent(jpeg ? "image.jpg" : "image.png")
+            try PDFEmbeddedImageEncoder.encode(input, destination: encoded, width: width, height: height, channels: channels, hasAlpha: alpha, encodedJPEG: jpeg)
+            let bytes = try FileSafety.identity(encoded).bytes
+            guard bytes <= maximumInputBytes, try sourceIdentity(asset.descriptor) == before else { throw FileformError(.inputChanged, "Source changed or output exceeded limits.") }
+            try writePreview(encoded, to: output, expectedBytes: bytes)
+            guard try sourceIdentity(asset.descriptor) == before else { _ = ftruncate(output, 0); throw FileformError(.inputChanged, "Source changed.") }
+            return .pageRaster(.init(bytes: bytes, width: width, height: height, format: jpeg ? .jpeg : .png))
+        }
         let inspection: Inspection
         if DocumentBackend.recognizesPDF(input) { inspection = try DocumentBackend.inspect(input, identity: before) }
         else if ImageBackend.canRead(input) { inspection = try ImageBackend.inspect(input, identity: before) }
@@ -160,7 +170,7 @@ public enum NativeWorkerOperations {
                 throw FileformError(.inputChanged, "Source changed.")
             }
             return .preview(.init(bytes: bytes, width: image.width, height: image.height))
-        case .handshake: throw WorkerProtocolError.invalidRequest
+        case .embeddedImage, .handshake: throw WorkerProtocolError.invalidRequest
         }
     }
 

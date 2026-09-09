@@ -41,10 +41,15 @@ public enum WorkerOperation: Codable, Equatable, Sendable {
     /// scratch file. It is never a final destination. Page indices are zero-based.
     case preview(asset: WorkerAssetHandle, outputDescriptor: Int32, maximumDimension: Int, pageIndex: Int?)
 
+    case embeddedImage(asset: WorkerAssetHandle, outputDescriptor: Int32, width: Int, height: Int, channels: Int, hasAlpha: Bool, encodedJPEG: Bool)
+
     case pageRaster(asset: WorkerAssetHandle, outputDescriptor: Int32?, pageIndex: Int, clockwiseRotation: Int, dpi: Int, format: OutputFormat, quality: Double)
 
     fileprivate func validate() throws {
         switch self {
+        case .embeddedImage(let asset, let output, let width, let height, let channels, let alpha, let jpeg):
+            try asset.validate()
+            guard output >= 3, output != asset.descriptor, (1...16384).contains(width), (1...16384).contains(height), width * height <= 64_000_000, [1, 3].contains(channels), !jpeg || !alpha else { throw WorkerProtocolError.invalidRequest }
         case .pageRaster(let asset, let output, let page, let rotation, let dpi, let format, let quality):
             try asset.validate()
             guard output.map({ $0 >= 3 && $0 != asset.descriptor }) ?? true, page >= 0, [0, 90, 180, 270].contains(rotation), (36...600).contains(dpi), [.png, .jpeg].contains(format), quality.isFinite, (0.05...1).contains(quality) else { throw WorkerProtocolError.invalidRequest }

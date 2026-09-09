@@ -3,7 +3,7 @@ import Foundation
 
 /// Stable operation identifiers. Declaration does not imply backend availability.
 public enum OperationID: String, Codable, Sendable {
-    case conversion = "file.convert", pdfComposition = "pdf.compose", pdfSplit = "pdf.split", pdfRasterize = "pdf.rasterize"
+    case conversion = "file.convert", pdfComposition = "pdf.compose", pdfSplit = "pdf.split", pdfRasterize = "pdf.rasterize", pdfExtractImages = "pdf.extract-images"
     case mediaTrim = "media.trim", imageCrop = "image.crop", fetch = "link.fetch"
 }
 public enum OutputCardinality: String, Codable, Sendable { case file, directory }
@@ -82,6 +82,7 @@ public enum TransformationOperation: Codable, Equatable, Sendable {
     case pdfComposition(pages: [PageReference])
     /// Each nonempty group is one output PDF; duplicates and order are intentional.
     case pdfSplit(groups: [[PageReference]])
+    case pdfExtractImages(pages: [PageReference])
     case pdfRasterize(pages: [PageReference], dpi: Int, quality: Double)
     case mediaTrim(interval: MediaInterval, mode: TrimMode, audioStream: Int?, muteAudio: Bool = false)
     case imageCrop(rectangle: PixelCrop, conversion: ConversionParameters)
@@ -90,7 +91,7 @@ public enum TransformationOperation: Codable, Equatable, Sendable {
 
     // Decode existing v1 records without a mute field as automatic audio
     // selection. Never reinterpret nil audioStream as permission to drop audio.
-    private enum OperationKey: String, CodingKey { case conversion, pdfComposition, pdfSplit, pdfRasterize, mediaTrim, mediaTrimMuted, imageCrop, fetch }
+    private enum OperationKey: String, CodingKey { case conversion, pdfComposition, pdfSplit, pdfRasterize, pdfExtractImages, mediaTrim, mediaTrimMuted, imageCrop, fetch }
     private enum ParameterKey: String, CodingKey { case _0, pages, groups, dpi, quality, interval, mode, audioStream, muteAudio, rectangle, conversion, url, maximumBytes }
     public init(from decoder: Decoder) throws {
         let root = try decoder.container(keyedBy: OperationKey.self)
@@ -102,6 +103,7 @@ public enum TransformationOperation: Codable, Equatable, Sendable {
         case .conversion: self = .conversion(try value.decode(ConversionParameters.self, forKey: ._0))
         case .pdfComposition: self = .pdfComposition(pages: try value.decode([PageReference].self, forKey: .pages))
         case .pdfSplit: self = .pdfSplit(groups: try value.decode([[PageReference]].self, forKey: .groups))
+        case .pdfExtractImages: self = .pdfExtractImages(pages: try value.decode([PageReference].self, forKey: .pages))
         case .pdfRasterize: self = .pdfRasterize(pages: try value.decode([PageReference].self, forKey: .pages), dpi: try value.decode(Int.self, forKey: .dpi), quality: try value.decode(Double.self, forKey: .quality))
         case .mediaTrim, .mediaTrimMuted:
             let explicitMute = value.contains(.muteAudio) ? try value.decode(Bool.self, forKey: .muteAudio) : nil
@@ -133,6 +135,9 @@ public enum TransformationOperation: Codable, Equatable, Sendable {
         case .pdfSplit(let groups):
             var value = root.nestedContainer(keyedBy: ParameterKey.self, forKey: .pdfSplit)
             try value.encode(groups, forKey: .groups)
+        case .pdfExtractImages(let pages):
+            var value = root.nestedContainer(keyedBy: ParameterKey.self, forKey: .pdfExtractImages)
+            try value.encode(pages, forKey: .pages)
         case .pdfRasterize(let pages, let dpi, let quality):
             var value = root.nestedContainer(keyedBy: ParameterKey.self, forKey: .pdfRasterize)
             try value.encode(pages, forKey: .pages)
@@ -158,11 +163,11 @@ public enum TransformationOperation: Codable, Equatable, Sendable {
 
     public var id: OperationID {
         switch self {
-        case .conversion: .conversion; case .pdfComposition: .pdfComposition; case .pdfSplit: .pdfSplit; case .pdfRasterize: .pdfRasterize
+        case .conversion: .conversion; case .pdfComposition: .pdfComposition; case .pdfSplit: .pdfSplit; case .pdfRasterize: .pdfRasterize; case .pdfExtractImages: .pdfExtractImages
         case .mediaTrim: .mediaTrim; case .imageCrop: .imageCrop; case .fetch: .fetch
         }
     }
-    public var cardinality: OutputCardinality { switch self { case .pdfSplit, .pdfRasterize: .directory; default: .file } }
+    public var cardinality: OutputCardinality { switch self { case .pdfSplit, .pdfRasterize, .pdfExtractImages: .directory; default: .file } }
 }
 public struct OutputSpecification: Codable, Equatable, Sendable {
     public let destination: URL
@@ -193,6 +198,7 @@ public struct TransformationRequest: Codable, Sendable {
               output.destination.isFileURL, output.cardinality == operation.cardinality else {
             throw FileformError(.invalidRequest, "Invalid asset bindings or output cardinality.")
         }
+        guard output.format != .images || operation.id == .pdfExtractImages else { throw FileformError(.invalidRequest, "Images is a collection target, not a file codec.") }
         let destination = output.destination.standardizedFileURL.resolvingSymlinksInPath()
         guard assets.allSatisfy({ $0.url.standardizedFileURL.resolvingSymlinksInPath() != destination }) else {
             throw FileformError(.invalidRequest, "The destination cannot be a source file.")
@@ -208,6 +214,12 @@ public struct TransformationRequest: Codable, Sendable {
                 throw FileformError(.invalidRequest, "Choose between 1 and 10000 split groups, with at most 100000 pages.")
             }
             for pages in groups { try validatePages(pages) }
+        case .pdfExtractImages(let pages):
+            let ids = Set(assets.map(\.id))
+            guard !assets.isEmpty, assets.count <= 128, !pages.isEmpty, pages.count <= 1000, output.format == .images,
+                  pages.allSatisfy({ ids.contains($0.sourceID) && $0.pageIndex >= 0 && $0.clockwiseRotation == 0 }) else {
+                throw FileformError(.invalidRequest, "Image extraction requires 1–128 PDF sources, 1–1000 selected pages without rotation, and an Images directory.")
+            }
         case .pdfRasterize(let pages, let dpi, let quality):
             try validatePages(pages, raster: true)
             guard assets.count <= 128, pages.count <= 1000, (36...600).contains(dpi), quality.isFinite, (0.05...1).contains(quality) else {

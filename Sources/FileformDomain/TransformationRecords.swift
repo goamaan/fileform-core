@@ -11,10 +11,12 @@ public struct TransformationPlan: Codable, Sendable {
     public let request: TransformationRequest
     public let inputs: [InspectedAsset]
     public let warnings: [String]
+    public let pdfImageExtraction: PDFImageExtractionDetails?
     public let mediaTrim: MediaTrimDetails?
     public let fetchSource: FetchSourceSnapshot?
-    public init(request: TransformationRequest, inputs: [InspectedAsset], warnings: [String], mediaTrim: MediaTrimDetails? = nil, fetchSource: FetchSourceSnapshot? = nil) {
+    public init(request: TransformationRequest, inputs: [InspectedAsset], warnings: [String], mediaTrim: MediaTrimDetails? = nil, fetchSource: FetchSourceSnapshot? = nil, pdfImageExtraction: PDFImageExtractionDetails? = nil) {
         schemaVersion = 1; self.request = request; self.inputs = inputs; self.warnings = warnings
+        self.pdfImageExtraction = pdfImageExtraction
         self.mediaTrim = mediaTrim; self.fetchSource = fetchSource
     }
 }
@@ -24,8 +26,9 @@ public struct CommittedArtifact: Codable, Sendable {
     public let bytes: Int64
     public let sourceIDs: [String]
     public let sourcePages: [PageReference]?
-    public init(url: URL, format: OutputFormat, bytes: Int64, sourceIDs: [String], sourcePages: [PageReference]? = nil) {
-        self.url = url; self.format = format; self.bytes = bytes; self.sourceIDs = sourceIDs; self.sourcePages = sourcePages
+    public let pdfEmbeddedImage: PDFEmbeddedImageCandidate?
+    public init(url: URL, format: OutputFormat, bytes: Int64, sourceIDs: [String], sourcePages: [PageReference]? = nil, pdfEmbeddedImage: PDFEmbeddedImageCandidate? = nil) {
+        self.url = url; self.format = format; self.bytes = bytes; self.sourceIDs = sourceIDs; self.sourcePages = sourcePages; self.pdfEmbeddedImage = pdfEmbeddedImage
     }
 }
 public struct TransformationResult: Codable, Sendable {
@@ -35,12 +38,14 @@ public struct TransformationResult: Codable, Sendable {
     public let artifacts: [CommittedArtifact]
     public let warnings: [String]
     public let attempts: Int
+    public let pdfImageExtraction: PDFImageExtractionDetails?
     public let mediaTrim: MediaTrimDetails?
     public let fetchReceipt: FetchReceipt?
     public init(operationID: OperationID, status: ResultStatus, artifacts: [CommittedArtifact], warnings: [String], attempts: Int,
-                mediaTrim: MediaTrimDetails? = nil, fetchReceipt: FetchReceipt? = nil) {
+                mediaTrim: MediaTrimDetails? = nil, fetchReceipt: FetchReceipt? = nil, pdfImageExtraction: PDFImageExtractionDetails? = nil) {
         schemaVersion = 1; self.operationID = operationID; self.status = status
         self.artifacts = artifacts; self.warnings = warnings; self.attempts = attempts
+        self.pdfImageExtraction = pdfImageExtraction
         self.mediaTrim = mediaTrim; self.fetchReceipt = fetchReceipt
     }
 }

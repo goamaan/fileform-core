@@ -31,7 +31,7 @@ struct ImageCrop: AsyncParsableCommand {
     }
 }
 struct PDFCommand: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(commandName: "pdf", abstract: "Compose and split PDFs using verified page order.", subcommands: [PDFMerge.self, PDFSplit.self, PDFPages.self])
+    static let configuration = CommandConfiguration(commandName: "pdf", abstract: "Compose and split PDFs using verified page order.", subcommands: [PDFMerge.self, PDFSplit.self, PDFPages.self, PDFExtractImages.self])
 }
 struct PDFMerge: AsyncParsableCommand {
     static let configuration = CommandConfiguration(commandName: "merge", abstract: "Combine ordered PDFs and still images into one PDF.")
@@ -146,6 +146,55 @@ struct PDFPages: AsyncParsableCommand {
                 let request = try TransformationRequest(assets: assets, operation: .pdfRasterize(pages: chosen, dpi: dpi, quality: quality),
                     output: .init(destination: destination, format: format, cardinality: .directory), collisionPolicy: collision)
                 try await performEditing(request, engine: makeEngine(nil), dryRun: dryRun)
+            }
+        } catch { try fail(error, json: json) }
+    }
+}
+
+struct PDFExtractImages: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "extract-images", abstract: "Extract unique embedded image objects from PDF page resources, preserving eligible JPEG bytes or PNG samples.")
+    @Option(name: .customLong("input"), help: "Source PDF; repeat in document order.") var inputs: [String] = []
+    @Option(help: "One-based pages/ranges in the concatenated inputs, e.g. 3,1-2,3. Omit for every page.") var pages: String?
+    @Option(help: "New output directory; supported images are published together.") var output: String
+    @Option(help: "PDF engine pack directory; also accepts FILEFORM_PDF_PACK.") var pdfPack: String?
+    @Option(help: "Collision policy: fail or rename.") var collision: CollisionPolicy = .fail
+    @Flag(help: "Inspect unique embedded images and unsupported candidate reasons without saving files.") var dryRun = false
+    @Flag(help: "Emit structured errors/results.") var json = false
+    mutating func run() async throws {
+        do {
+            guard (1...128).contains(inputs.count) else { throw FileformError(.invalidRequest, "Use 1–128 PDF inputs.") }
+            let assets = inputs.enumerated().map { AssetReference(id: "source-\($0.offset + 1)", url: URL(fileURLWithPath: $0.element)) }
+            let pdfPack = pdfPack
+            let selection = pages, destination = URL(fileURLWithPath: output), collision = collision, dryRun = dryRun
+            // Inspect through the same isolated worker used for rendering.
+            let workerURL = ProcessInfo.processInfo.environment["FILEFORM_WORKER_PATH"].map { URL(fileURLWithPath: $0) }
+                ?? Bundle.main.executableURL!.deletingLastPathComponent().appendingPathComponent("fileform-worker")
+            let worker = NativeWorkerClient(executable: workerURL)
+            try await cancellable {
+                var all: [PageReference] = []
+                for asset in assets {
+                    let info = try await worker.inspect(asset.url)
+                    guard info.family == .pdf else { throw FileformError(.unsupported, "Use PDF inputs.") }
+                    let count = info.pageCount ?? 0
+                    guard count > 0, all.count + count <= 128_000 else { throw FileformError(.resourceLimit, "Source page inventory exceeds limits.") }
+                    all += (0..<count).map { PageReference(sourceID: asset.id, pageIndex: $0) }
+                }
+                let chosen: [PageReference]
+                if let selection {
+                    guard !selection.isEmpty, selection.utf8.count <= 16384 else { throw FileformError(.invalidRequest, "Provide a bounded page selection.") }
+                    var selected: [PageReference] = []
+                    for part in selection.split(separator: ",", omittingEmptySubsequences: false) {
+                        let bounds = part.trimmingCharacters(in: .whitespaces).split(separator: "-", omittingEmptySubsequences: false)
+                        guard (1...2).contains(bounds.count), let start = Int(bounds[0]), start > 0,
+                              let end = bounds.count == 2 ? Int(bounds[1]) : start, end >= start, end <= all.count else { throw FileformError(.invalidRequest, "Choose existing one-based pages or increasing ranges.") }
+                        guard end - start + 1 <= 1000 - selected.count else { throw FileformError(.resourceLimit, "Select at most 1000 pages per job.") }
+                        selected += all[(start - 1)..<end]
+                    }
+                    chosen = selected
+                } else { chosen = all }
+                let request = try TransformationRequest(assets: assets, operation: .pdfExtractImages(pages: chosen),
+                    output: .init(destination: destination, format: .images, cardinality: .directory), collisionPolicy: collision)
+                try await performEditing(request, engine: makeEngine(nil, pdfPath: pdfPack), dryRun: dryRun)
             }
         } catch { try fail(error, json: json) }
     }

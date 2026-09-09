@@ -7,16 +7,18 @@ public enum OutputFormat: String, CaseIterable, Codable, Sendable, Identifiable 
     case jpeg, png, tiff, heic, avif, webp
     case mp4, mov, m4a, wav, flac, mp3
     case pdf, txt, markdown, csv, tsv, json
+    /// A heterogeneous directory of image artifacts; never a file codec.
+    case images
     public var id: String { rawValue }
     public var fileExtension: String {
         switch self { case .jpeg: "jpg"; case .tiff: "tiff"; case .markdown: "md"; default: rawValue }
     }
     public var title: String {
-        switch self { case .jpeg: "JPEG"; case .tiff: "TIFF"; case .markdown: "Markdown"; default: rawValue.uppercased() }
+        switch self { case .images: "Images"; case .jpeg: "JPEG"; case .tiff: "TIFF"; case .markdown: "Markdown"; default: rawValue.uppercased() }
     }
     public var family: FileFamily {
         switch self {
-        case .jpeg, .png, .tiff, .heic, .avif, .webp: .image
+        case .jpeg, .png, .tiff, .heic, .avif, .webp, .images: .image
         case .mp4, .mov, .m4a, .wav, .flac, .mp3: .media
         case .pdf: .pdf
         case .csv, .tsv, .json: .table

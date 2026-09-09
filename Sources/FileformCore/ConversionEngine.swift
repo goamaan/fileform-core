@@ -18,6 +18,10 @@ public actor ConversionEngine {
         return PDFOptimizationBackend(pack: try PDFPack(directory: pdfPackURL), worker: try nativeWorker())
     }
 
+    func pdfImageExtractionBackend() throws -> PDFImageExtractionBackend {
+        guard let pdfPackURL else { throw FileformError(.engineUnavailable, "Install the PDF engine pack to extract embedded images.") }
+        return PDFImageExtractionBackend(pack: try PDFPack(directory: pdfPackURL), worker: try nativeWorker())
+    }
     func nativeWorker() throws -> NativeWorkerClient {
         let worker = workerExecutable ?? ProcessInfo.processInfo.environment["FILEFORM_WORKER_PATH"].map { URL(fileURLWithPath: $0) }
             ?? Bundle.main.executableURL!.deletingLastPathComponent().appendingPathComponent("fileform-worker")
@@ -123,6 +127,13 @@ public actor ConversionEngine {
                     backendVersion: os, verification: "Worker renders every selected page; complete image decode, container and dimensions checked before atomic folder publication.", operationID: .pdfRasterize, cardinality: .directory))
             }
         }
+        if inspection == nil || inspection?.family == .pdf {
+            let backend = try? pdfImageExtractionBackend()
+            let capability = Capability(format: .images, goals: [.convert], engine: "pdf-images", available: backend != nil,
+                limitation: "Resource-referenced images only, including nested Forms. Eligible original JPEG or 8-bit DeviceRGB/Gray PNG with supported soft masks; explicit skips, no page rendering. Up to 1000 unique images and 512 MiB cumulative decoded/output bytes.")
+            routes.append(.init(id: "pdf.extract-images:qpdf:images", inputFamilies: [.pdf], capability: capability,
+                backendVersion: backend?.pack.version, verification: "Bounded object graph, source/object/generation provenance, isolated image decode and exact straight RGBA validation, original JPEG SHA-256, atomic directory publication.", operationID: .pdfExtractImages, cardinality: .directory))
+        }
         if inspection == nil {
             for format in DirectFetchBackend.formats {
                 let capability = Capability(format: format, goals: [.convert], engine: "direct-http", available: mediaVersion != nil,
@@ -136,6 +147,7 @@ public actor ConversionEngine {
     }
 
     public func plan(_ request: ConversionRequest) async throws -> ConversionPlan {
+        guard request.format != .images else { throw FileformError(.invalidRequest, "Images is a collection target for PDF extraction, not a file codec.") }
         try validateOptions(request)
         let inspection: Inspection
         if request.format == .pdf, request.goal != .convert, DocumentBackend.recognizesPDF(request.input) { inspection = try await pdfBackend().worker.inspect(request.input) }

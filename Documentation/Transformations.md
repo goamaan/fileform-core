@@ -58,3 +58,5 @@ source revision, platform, pack hashes and fixture evidence.
 
 Verify using `swift test`, `Tools/smoke-cli.sh`, and
 `python3 Tools/smoke-transformations.py` after building the CLI.
+
+`pdf.extract-images` adds a heterogeneous `images` directory target with actual JPEG/PNG artifact formats. Optional `pdfImageExtraction` plan/result details and `pdfEmbeddedImage` artifact details preserve counts, source/object/generation provenance, exact encoding outcomes and explicit skips. See [embedded PDF images](PDF-embedded-images.md) for the resource-discovery policy, fidelity and bounds.

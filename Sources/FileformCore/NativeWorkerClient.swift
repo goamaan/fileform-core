@@ -70,6 +70,15 @@ public struct NativeWorkerClient: Sendable {
         return metadata
     }
 
+    func embeddedImage(_ input: URL, destination: URL, width: Int, height: Int, channels: Int, hasAlpha: Bool, encodedJPEG: Bool) async throws -> WorkerRasterArtifact {
+        let operation = WorkerOperation.embeddedImage(asset: .init(assetID: "source", descriptor: 3), outputDescriptor: 4,
+            width: width, height: height, channels: channels, hasAlpha: hasAlpha, encodedJPEG: encodedJPEG)
+        let result = try await perform(input: input, previewDimension: nil, pageIndex: nil, rasterOperation: operation, rasterDestination: destination)
+        guard case .pageRaster(let metadata) = result.response.payload, metadata.width == width, metadata.height == height,
+              metadata.format == (encodedJPEG ? .jpeg : .png), metadata.bytes != nil else { throw FileformError(.verificationFailed, "Invalid extracted image response.") }
+        return metadata
+    }
+
     private struct Reply: Sendable {
         let response: WorkerResponse
         let identity: FileIdentity

@@ -45,7 +45,7 @@ fileform convert photo.png --to jpeg --dry-run --json
 
 Use `.build/debug/fileform` or `swift run fileform` before installing the executable. `--media-pack` or `FILEFORM_MEDIA_PACK` selects a verified local pack; a packaged CLI also discovers an adjacent `MediaPack` directory. No automatic cloud fallback, account, activation or API key is required for these operations.
 
-Current outputs include JPEG/PNG/TIFF, MP4/MOV/M4A/WAV/FLAC with the media pack, [MP3](Documentation/MP3-output.md) with its encoder-enabled pack, PDF page/image/text operations, local OCR, and CSV/TSV/flat-JSON tables. See [supported routes and limits](Documentation/Support.md).
+Current outputs include JPEG/PNG/TIFF, MP4/MOV/M4A/WAV/FLAC with the media pack, [MP3](Documentation/MP3-output.md) with its encoder-enabled pack, PDF page/image/text operations and [embedded-image extraction](Documentation/PDF-embedded-images.md), local OCR, and CSV/TSV/flat-JSON tables. See [supported routes and limits](Documentation/Support.md).
 
 ## File safety and result contracts
 
